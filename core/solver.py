@@ -60,13 +60,16 @@ class SimplexSolver:
             is_optimal = True
             j_0 = -1
             min_diff = Fraction(0)
+            diffs = []
             
             for j in range(self.n_vars):
                 if j in self.N:
+                    diffs.append(Fraction(0))
                     continue
                 A_j = [self.A[i][j] for i in range(self.n_constraints)]
                 u_A = sum(u_0[i] * A_j[i] for i in range(self.n_constraints))
                 diff = u_A - self.c[j]
+                diffs.append(diff)
                 
                 if diff < Fraction(0):
                     is_optimal = False
@@ -77,7 +80,8 @@ class SimplexSolver:
             if is_optimal:
                 yield SimplexStep(
                     iteration=iteration, N=list(self.N), B_inv=[r[:] for r in B_inv], x_B=x_B, u_0=u_0,
-                    is_optimal=True, description="План оптимален. Все двойственные ограничения выполнены."
+                    is_optimal=True, description="План оптимален. Все двойственные ограничения выполнены.",
+                    c_B=c_B, diffs=diffs
                 )
                 return
 
@@ -88,23 +92,29 @@ class SimplexSolver:
                 yield SimplexStep(
                     iteration=iteration, N=list(self.N), B_inv=[r[:] for r in B_inv], x_B=x_B, u_0=u_0,
                     is_optimal=False, is_unbounded=True, j_0=j_0, z_0=z_0,
-                    description="Целевая функция не ограничена сверху. Решения нет."
+                    description="Целевая функция не ограничена сверху. Решения нет.",
+                    c_B=c_B, diffs=diffs
                 )
                 return
             
             t_0 = None
             s_0 = -1
+            ratios = []
             for i in range(self.n_constraints):
                 if z_0[i] > Fraction(0):
                     ratio = x_B[i] / z_0[i]
+                    ratios.append(ratio)
                     if t_0 is None or ratio < t_0:
                         t_0 = ratio
                         s_0 = i
+                else:
+                    ratios.append(None)
                         
             yield SimplexStep(
                 iteration=iteration, N=list(self.N), B_inv=[r[:] for r in B_inv], x_B=x_B, u_0=u_0,
                 is_optimal=False, j_0=j_0, z_0=z_0, t_0=t_0, s_0=self.N[s_0],
-                description=f"План не оптимален. Вводим x_{j_0+1} в базис, выводим x_{self.N[s_0]+1}."
+                description=f"План не оптимален. Вводим x_{{{j_0+1}}} в базис, выводим x_{{{self.N[s_0]+1}}}.",
+                c_B=c_B, diffs=diffs, ratios=ratios
             )
             
             self.N[s_0] = j_0

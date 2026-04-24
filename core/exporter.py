@@ -28,7 +28,8 @@ class Exporter:
         return f"\\begin{{bmatrix}}\n{body}\n\\end{{bmatrix}}"
 
     @staticmethod
-    def generate_markdown(problem: LinearProblem, steps: List[SimplexStep], final_answer: Fraction) -> str:
+    def generate_markdown(problem: LinearProblem, steps: List[SimplexStep], final_answer: Fraction, detailed: bool = False, hidden_steps: List[int] = None) -> str:
+        hidden = set(hidden_steps or [])
         md = []
         md.append("# Решение задачи модифицированным симплекс-методом\n")
         
@@ -137,12 +138,27 @@ class Exporter:
         md.append("---\n")
         
         for step in steps:
+            if step.iteration in hidden:
+                continue
+                
             md.append(f"### Шаг {step.iteration}")
             
             md.append(f"**Базис N:** $({', '.join(str(n+1) for n in step.N)})$  ")
             md.append(f"**Текущий план $x_B$:**  \n$$ {Exporter.vec_to_latex(step.x_B)} $$  ")
             md.append(f"**Обратная матрица $B^{{-1}}$:**  \n$$ {Exporter.mat_to_latex(step.B_inv)} $$  ")
-            md.append(f"**Вектор оценок $u_0$:**  \n$$ {Exporter.vec_to_latex(step.u_0, is_column=False)} $$  ")
+            
+            if detailed and step.c_B is not None:
+                c_b_str = " \\begin{bmatrix} " + " & ".join(Exporter.frac_to_latex(x) for x in step.c_B) + " \\end{bmatrix} "
+                md.append(f"**Вектор оценок $u_0 = c_B B^{{-1}}$:**  \n$$ u_0 = {c_b_str} B^{{-1}} = {Exporter.vec_to_latex(step.u_0, is_column=False)} $$  ")
+            else:
+                md.append(f"**Вектор оценок $u_0$:**  \n$$ {Exporter.vec_to_latex(step.u_0, is_column=False)} $$  ")
+            
+            if detailed and step.diffs is not None and not step.is_optimal:
+                md.append("**Проверка оптимальности $\\Delta_j = u_0 A_j - c_j$:**\n$$ \\begin{align*} ")
+                for j, diff in enumerate(step.diffs):
+                    if j not in step.N:
+                        md.append(f"\\Delta_{{{j+1}}} &= {Exporter.frac_to_latex(diff)} \\\\ ")
+                md.append("\\end{align*} $$\n")
             
             if step.is_optimal:
                 md.append("\n-- **План оптимален.** Все двойственные ограничения выполнены.\n")
@@ -152,8 +168,18 @@ class Exporter:
                 md.append("\n-- **Целевая функция не ограничена сверху. Решения нет.**\n")
             else:
                 md.append(f"\n-- **План не оптимален.** Вводим в базис $x_{{{step.j_0+1}}}$.\n")
-                md.append(f"**Направляющий вектор $z_0$:**  \n$$ {Exporter.vec_to_latex(step.z_0)} $$  ")
-                md.append(f"**Шаг $t_0$:** ${Exporter.frac_to_latex(step.t_0)}$  ")
+                
+                if detailed and step.z_0 is not None:
+                    md.append(f"**Направляющий вектор $z_0 = B^{{-1}} A_{{{step.j_0+1}}}$:**  \n$$ z_0 = {Exporter.vec_to_latex(step.z_0)} $$  ")
+                else:
+                    md.append(f"**Направляющий вектор $z_0$:**  \n$$ {Exporter.vec_to_latex(step.z_0)} $$  ")
+                    
+                if detailed and step.ratios is not None:
+                    ratios_str = ", ".join(f"\\frac{{{Exporter.frac_to_latex(step.x_B[i])}}}{{{Exporter.frac_to_latex(step.z_0[i])}}}" for i, r in enumerate(step.ratios) if r is not None)
+                    md.append(f"**Шаг $t_0$:** $\\min({ratios_str}) = {Exporter.frac_to_latex(step.t_0)}$  ")
+                else:
+                    md.append(f"**Шаг $t_0$:** ${Exporter.frac_to_latex(step.t_0)}$  ")
+                    
                 md.append(f"Выводим из базиса $x_{{{step.s_0+1}}}$.\n")
                 
             md.append("---\n")
@@ -161,7 +187,8 @@ class Exporter:
         return "\n".join(md)
 
     @staticmethod
-    def generate_html(problem: LinearProblem, steps: List[SimplexStep], final_answer: Fraction) -> str:
+    def generate_html(problem: LinearProblem, steps: List[SimplexStep], final_answer: Fraction, detailed: bool = False, hidden_steps: List[int] = None) -> str:
+        hidden = set(hidden_steps or [])
         html = []
         html.append("<div class='mb-8 pb-4 border-b border-gray-200'>")
         html.append("<h3 class='text-xl font-bold text-gray-800 mb-4'>Прямая задача</h3>")
@@ -274,8 +301,15 @@ class Exporter:
         html.append("</div>")
         
         for step in steps:
-            html.append("<div class='step-container bg-white p-6 rounded-lg border border-gray-200 shadow-sm mb-6'>")
-            html.append(f"<h4 class='text-lg font-bold text-indigo-700 mb-4 border-b pb-2'>Шаг {step.iteration}</h4>")
+            if step.iteration in hidden:
+                continue
+            
+            html.append(f"<div class='step-container bg-white p-6 rounded-lg border border-gray-200 shadow-sm mb-6' id='step-card-{step.iteration}'>")
+            
+            html.append("<div class='flex justify-between items-center border-b pb-2 mb-4'>")
+            html.append(f"<h4 class='text-lg font-bold text-indigo-700'>Шаг {step.iteration}</h4>")
+            html.append(f"<label class='text-sm text-gray-500 flex items-center cursor-pointer no-print'><input type='checkbox' class='mr-2 step-visibility-toggle' data-step='{step.iteration}' checked onchange='toggleStepVisibility(this)'> Показывать шаг</label>")
+            html.append("</div>")
             
             html.append("<div class='grid grid-cols-1 md:grid-cols-2 gap-6'>")
             
@@ -286,10 +320,24 @@ class Exporter:
             
             html.append("<div>")
             html.append(f"<p class='mb-2'><strong>Обратная матрица $B^{{-1}}$:</strong></p><div class='overflow-x-auto'>$$ {Exporter.mat_to_latex(step.B_inv)} $$</div>")
-            html.append(f"<p class='mb-2'><strong>Вектор оценок $u_0$:</strong></p><div class='overflow-x-auto'>$$ {Exporter.vec_to_latex(step.u_0, is_column=False)} $$</div>")
+            
+            if detailed and step.c_B is not None:
+                c_b_str = " \\begin{bmatrix} " + " & ".join(Exporter.frac_to_latex(x) for x in step.c_B) + " \\end{bmatrix} "
+                html.append(f"<p class='mb-2'><strong>Вектор оценок $u_0 = c_B B^{{-1}}$:</strong></p><div class='overflow-x-auto'>$$u_0 = {c_b_str} B^{{-1}} = {Exporter.vec_to_latex(step.u_0, is_column=False)} $$</div>")
+            else:
+                html.append(f"<p class='mb-2'><strong>Вектор оценок $u_0$:</strong></p><div class='overflow-x-auto'>$$ {Exporter.vec_to_latex(step.u_0, is_column=False)} $$</div>")
             html.append("</div>")
             
             html.append("</div>")
+            
+            if detailed and step.diffs is not None and not step.is_optimal:
+                html.append("<div class='mt-4 bg-gray-50 p-4 rounded'>")
+                html.append("<p class='font-semibold mb-2'>Проверка оптимальности $\\Delta_j = u_0 A_j - c_j$:</p>")
+                html.append("<div class='overflow-x-auto'>$$ \\begin{align*} ")
+                for j, diff in enumerate(step.diffs):
+                    if j not in step.N:
+                        html.append(f"\\Delta_{{{j+1}}} &= {Exporter.frac_to_latex(diff)} \\\\ ")
+                html.append("\\end{align*} $$</div></div>")
             
             html.append("<div class='mt-6 pt-4 border-t border-gray-100 bg-gray-50 p-4 rounded'>")
             if step.is_optimal:
@@ -301,8 +349,19 @@ class Exporter:
             else:
                 html.append(f"<p class='text-gray-700 font-medium'>План не оптимален. Вводим в базис $x_{{{step.j_0+1}}}$.</p>")
                 html.append("<div class='mt-2 grid grid-cols-1 md:grid-cols-2 gap-4'>")
-                html.append(f"<div><strong>Направляющий вектор $z_0$:</strong><br>$$ {Exporter.vec_to_latex(step.z_0)} $$</div>")
-                html.append(f"<div><strong>Шаг $t_0$:</strong> ${Exporter.frac_to_latex(step.t_0)}$<br><br>")
+                
+                if detailed and step.z_0 is not None:
+                    html.append(f"<div><strong>Направляющий вектор $z_0 = B^{{-1}} A_{{{step.j_0+1}}}$:</strong><br>$$ z_0 = {Exporter.vec_to_latex(step.z_0)} $$</div>")
+                else:
+                    html.append(f"<div><strong>Направляющий вектор $z_0$:</strong><br>$$ {Exporter.vec_to_latex(step.z_0)} $$</div>")
+                    
+                html.append("<div>")
+                if detailed and step.ratios is not None:
+                    ratios_str = ", ".join(f"\\frac{{{Exporter.frac_to_latex(step.x_B[i])}}}{{{Exporter.frac_to_latex(step.z_0[i])}}}" for i, r in enumerate(step.ratios) if r is not None)
+                    html.append(f"<strong>Шаг $t_0$:</strong> $\\min({ratios_str}) = {Exporter.frac_to_latex(step.t_0)}$<br><br>")
+                else:
+                    html.append(f"<strong>Шаг $t_0$:</strong> ${Exporter.frac_to_latex(step.t_0)}$<br><br>")
+                    
                 html.append(f"<strong>Выводим из базиса:</strong> $x_{{{step.s_0+1}}}$.</div>")
                 html.append("</div>")
             html.append("</div>")

@@ -35,18 +35,19 @@ class Api:
             self.last_steps = steps
             self.last_final_answer = final_answer
 
-            html_output = Exporter.generate_html(problem, steps, final_answer)
+            detailed = data.get('detailed', False)
+            html_output = Exporter.generate_html(problem, steps, final_answer, detailed=detailed)
             return html_output
 
         except Exception as e:
             return {"error": str(e)}
 
-    def save_markdown(self):
+    def save_markdown(self, detailed=False, hidden_steps=None):
         if not self.last_problem or not self.last_steps:
             return {"error": "Нет решенной задачи"}
 
         try:
-            md_str = Exporter.generate_markdown(self.last_problem, self.last_steps, self.last_final_answer)
+            md_str = Exporter.generate_markdown(self.last_problem, self.last_steps, self.last_final_answer, detailed=detailed, hidden_steps=hidden_steps)
             
             # Using webview's save file dialog
             window = webview.windows[0]

@@ -24,3 +24,6 @@ class SimplexStep:
     t_0: Optional[Fraction] = None
     s_0: Optional[int] = None
     description: str = ""
+    c_B: Optional[List[Fraction]] = None
+    diffs: Optional[List[Fraction]] = None
+    ratios: Optional[List[Fraction]] = None

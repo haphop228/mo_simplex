@@ -14,6 +14,10 @@
     <header class="bg-indigo-600 text-white shadow-md p-4 flex justify-between items-center no-print">
         <h1 class="text-xl font-bold">Симплекс-Калькулятор</h1>
         <div id="export-controls" class="hidden flex items-center space-x-4">
+            <label class="flex items-center space-x-2 text-sm text-white mr-2 cursor-pointer" title="Показывать развернутые формулы вычислений">
+                <input type="checkbox" id="detailed-mode" class="rounded" onchange="re_solve()">
+                <span>Подробный режим</span>
+            </label>
             <div class="flex items-center space-x-2 text-sm text-white mr-4">
                 <label for="print-font-size" title="Размер шрифта при сохранении в PDF">Размер текста:</label>
                 <input type="number" id="print-font-size" value="14" min="8" max="24" class="text-black px-1 py-1 rounded w-16 focus:outline-none" onchange="updatePrintFontSize()">

@@ -116,7 +116,10 @@ async function solve() {
         signs.push(document.querySelector(`.constr-sign-${i}`).value);
     }
 
-    const problemData = { c, A, b, signs, is_max };
+    const problemData = { 
+        c, A, b, signs, is_max,
+        detailed: document.getElementById('detailed-mode') ? document.getElementById('detailed-mode').checked : false
+    };
 
     try {
         const resultHTML = await pywebview.api.solve(problemData);
@@ -148,10 +151,34 @@ async function solve() {
 }
 
 async function saveMarkdown() {
+    const detailed = document.getElementById('detailed-mode') ? document.getElementById('detailed-mode').checked : false;
+    const hiddenSteps = Array.from(document.querySelectorAll('.step-visibility-toggle:not(:checked)')).map(el => parseInt(el.dataset.step));
+    
     try {
-        await pywebview.api.save_markdown();
+        const result = await pywebview.api.save_markdown(detailed, hiddenSteps);
+        if (result && result.error) {
+            alert("Ошибка сохранения: " + result.error);
+        } else if (result && result.success) {
+            alert("Успешно сохранено!");
+        }
     } catch (e) {
-        alert("Ошибка при сохранении Markdown");
+        alert("Ошибка при сохранении Markdown: " + e);
+    }
+}
+
+function toggleStepVisibility(checkbox) {
+    const stepId = checkbox.dataset.step;
+    const card = document.getElementById(`step-card-${stepId}`);
+    if (checkbox.checked) {
+        card.classList.remove('no-print', 'opacity-60');
+    } else {
+        card.classList.add('no-print', 'opacity-60');
+    }
+}
+
+function re_solve() {
+    if (!document.getElementById('result-screen').classList.contains('hidden')) {
+        solve();
     }
 }
 

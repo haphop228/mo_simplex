@@ -58,6 +58,26 @@ def test_generate_markdown(sample_problem, sample_steps):
     assert "План оптимален" in md
     assert "**Ответ:** $48$" in md
 
+def test_generate_markdown_hidden_steps(sample_problem, sample_steps):
+    md = Exporter.generate_markdown(sample_problem, sample_steps, Fraction(48), hidden_steps=[1])
+    assert "### Шаг 1" not in md
+    assert "### Шаг 2" in md
+
+def test_generate_html_detailed(sample_problem, sample_steps):
+    step1 = sample_steps[0]
+    step1.c_B = [Fraction(0)]
+    step1.diffs = [Fraction(-1)]
+    step1.z_0 = [Fraction(1)]
+    step1.ratios = [Fraction(4)]
+    
+    html = Exporter.generate_html(sample_problem, sample_steps, Fraction(48), detailed=True)
+    
+    # Check detailed calculations
+    assert "u_0 =  \\begin{bmatrix} 0 \\end{bmatrix}  B^{-1}" in html
+    assert "\\Delta_" in html
+    assert "z_0 = B^{-1} A_{1}" in html
+    assert "\\min" in html
+
 def test_generate_html(sample_problem, sample_steps):
     html = Exporter.generate_html(sample_problem, sample_steps, Fraction(48))
     
