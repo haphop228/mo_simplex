@@ -1,0 +1,49 @@
+/* Custom tweaks */
+input[type=number]::-webkit-inner-spin-button, 
+input[type=number]::-webkit-outer-spin-button { 
+  -webkit-appearance: none; 
+  margin: 0; 
+}
+input[type=number] {
+    -moz-appearance: textfield;
+}
+
+/* Beautiful Math rendering adjustments */
+.katex-display {
+    margin: 0.5em 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 5px;
+}
+
+/* Print specific styles for A4 PDF */
+@media print {
+    @page {
+        size: A4 portrait;
+        margin: 2cm;
+    }
+    
+    body {
+        background-color: white !important;
+    }
+    
+    .no-print {
+        display: none !important;
+    }
+    
+    .print-wrapper {
+        box-shadow: none !important;
+        border: none !important;
+        padding: 0 !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+    }
+    
+    /* Avoid breaking equations across pages */
+    .step-container {
+        page-break-inside: avoid;
+        margin-bottom: 2em;
+        padding-bottom: 2em;
+        border-bottom: 1px solid #eee;
+    }
+}

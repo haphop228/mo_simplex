@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Модифицированный Симплекс-Метод</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans min-h-screen flex flex-col">
+    <header class="bg-indigo-600 text-white shadow-md p-4 flex justify-between items-center no-print">
+        <h1 class="text-xl font-bold">Симплекс-Калькулятор</h1>
+        <div id="export-controls" class="hidden space-x-2">
+            <button onclick="saveMarkdown()" class="bg-indigo-800 hover:bg-indigo-700 px-4 py-2 rounded text-sm transition">Скачать Markdown</button>
+            <button onclick="window.print()" class="bg-indigo-800 hover:bg-indigo-700 px-4 py-2 rounded text-sm transition">Сохранить PDF</button>
+            <button onclick="resetApp()" class="bg-red-600 hover:bg-red-500 px-4 py-2 rounded text-sm transition ml-4">Новая задача</button>
+        </div>
+    </header>
+
+    <main class="flex-grow p-6 flex justify-center w-full max-w-6xl mx-auto">
+        <!-- Экран ввода задачи -->
+        <div id="input-screen" class="w-full max-w-4xl bg-white shadow-lg rounded-xl p-8 border border-gray-200">
+            <h2 class="text-2xl font-bold mb-6 text-gray-700">Ввод задачи линейного программирования</h2>
+            
+            <div class="mb-6 flex gap-4 items-end">
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">Количество переменных</label>
+                    <input type="number" id="num-vars" value="2" min="1" max="10" class="border border-gray-300 rounded px-3 py-2 w-24 text-center focus:ring-2 focus:ring-indigo-500 outline-none" onchange="buildForm()">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">Количество ограничений</label>
+                    <input type="number" id="num-constraints" value="3" min="1" max="15" class="border border-gray-300 rounded px-3 py-2 w-24 text-center focus:ring-2 focus:ring-indigo-500 outline-none" onchange="buildForm()">
+                </div>
+                <button onclick="buildForm()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded border border-gray-300 transition">Обновить</button>
+            </div>
+
+            <div class="mb-8">
+                <h3 class="text-lg font-semibold mb-3 text-gray-700">Целевая функция:</h3>
+                <div class="flex flex-wrap items-center gap-2" id="objective-container">
+                    <!-- Заполняется из JS -->
+                </div>
+            </div>
+
+            <div class="mb-8">
+                <h3 class="text-lg font-semibold mb-3 text-gray-700">Ограничения:</h3>
+                <div id="constraints-container" class="space-y-3">
+                    <!-- Заполняется из JS -->
+                </div>
+            </div>
+
+            <div class="flex justify-end">
+                <button onclick="solve()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-lg shadow transition transform hover:-translate-y-0.5">Решить по шагам</button>
+            </div>
+            
+            <div id="error-message" class="text-red-500 mt-4 hidden font-medium"></div>
+        </div>
+
+        <!-- Экран вывода решения -->
+        <div id="result-screen" class="w-full hidden bg-white shadow-lg rounded-xl p-8 border border-gray-200 print-wrapper">
+            <h2 id="result-title" class="text-2xl font-bold mb-6 text-gray-800 text-center">Ход решения</h2>
+            
+            <div id="solution-content" class="text-lg space-y-8 leading-relaxed">
+                <!-- Контент генерируется из JS (LaTeX) -->
+            </div>
+        </div>
+    </main>
+
+    <footer class="bg-gray-100 text-center p-4 text-gray-500 text-sm no-print">
+        &copy; 2024 Модифицированный Симплекс-Метод
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
