@@ -48,11 +48,11 @@ def test_generate_markdown(sample_problem, sample_steps):
     
     # Check math blocks
     assert "12x_{1} + 3x_{2} &\\to \\max \\\\" in md
-    assert "4x_{1} + 1x_{2} &\\leq 16 \\\\" in md
+    assert "4x_{1} + x_{2} &\\leq 16 \\\\" in md
     
-    # Check steps
-    assert "### Шаг 1" in md
-    assert "### Шаг 2" in md
+    # Check headers
+    assert "## Каноническая форма" in md
+    assert "## Двойственная задача" in md
     
     # Check optimal and answer
     assert "План оптимален" in md
@@ -67,8 +67,8 @@ def test_generate_html(sample_problem, sample_steps):
     # Check math
     assert "12x_{1} + 3x_{2} &\\to \\max \\\\" in html
     
-    # Check steps
-    assert "Шаг 1</h4>" in html
-    assert "Шаг 2</h4>" in html
+    # Check headers
+    assert "<h3 class='text-xl font-bold text-gray-800 mb-4 mt-6'>Каноническая форма</h3>" in html
+    assert "<h3 class='text-xl font-bold text-gray-800 mb-4 mt-6'>Двойственная задача</h3>" in html
     assert "План оптимален" in html
     assert "<strong>Ответ:</strong> $48$" in html

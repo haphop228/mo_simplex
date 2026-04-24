@@ -74,6 +74,66 @@ class Exporter:
         md.append("\\end{align*}")
         md.append("$$\n")
         
+        md.append("## Каноническая форма")
+        md.append("$$")
+        md.append("\\begin{align*}")
+        n_orig = len(problem.c)
+        for i, row in enumerate(problem.A):
+            terms = []
+            for j, val in enumerate(row):
+                if val != 0:
+                    sign = "+" if val > 0 and terms else ("" if val > 0 else "-")
+                    v_abs = abs(val)
+                    coeff = str(v_abs) if v_abs != 1 else ""
+                    terms.append(f"{sign} {coeff}x_{{{j+1}}}")
+            row_str = " ".join(terms) if terms else "0"
+            if row_str.startswith("+ "):
+                row_str = row_str[2:]
+            
+            # Canonical always adds x_{n_orig + i + 1}
+            row_str += f" + x_{{{n_orig + i + 1}}}"
+            md.append(f"{row_str} &= {problem.b[i]} \\\\")
+            
+        md.append("x &\\geq 0")
+        md.append("\\end{align*}")
+        md.append("$$\n")
+
+        md.append("## Двойственная задача")
+        md.append("$$")
+        md.append("\\begin{align*}")
+        dual_obj = []
+        for i, b_val in enumerate(problem.b):
+            if b_val != 0:
+                sign = "+" if b_val > 0 and dual_obj else ("" if b_val > 0 else "-")
+                b_abs = abs(b_val)
+                coeff = str(b_abs) if b_abs != 1 else ""
+                dual_obj.append(f"{sign} {coeff}u_{{{i+1}}}")
+        dual_obj_str = " ".join(dual_obj) if dual_obj else "0"
+        if dual_obj_str.startswith("+ "):
+            dual_obj_str = dual_obj_str[2:]
+        dual_target = "\\min" if problem.is_max else "\\max"
+        md.append(f"{dual_obj_str} &\\to {dual_target} \\\\")
+        
+        for j in range(len(problem.c)):
+            terms = []
+            for i in range(len(problem.A)):
+                val = problem.A[i][j]
+                if val != 0:
+                    sign = "+" if val > 0 and terms else ("" if val > 0 else "-")
+                    v_abs = abs(val)
+                    coeff = str(v_abs) if v_abs != 1 else ""
+                    terms.append(f"{sign} {coeff}u_{{{i+1}}}")
+            row_str = " ".join(terms) if terms else "0"
+            if row_str.startswith("+ "):
+                row_str = row_str[2:]
+            # If max, dual is >= c. If min, dual is <= c
+            sign_str = "\\geq" if problem.is_max else "\\leq"
+            md.append(f"{row_str} &{sign_str} {problem.c[j]} \\\\")
+            
+        md.append("u &\\geq 0")
+        md.append("\\end{align*}")
+        md.append("$$\n")
+
         md.append("---\n")
         
         for step in steps:
@@ -147,6 +207,70 @@ class Exporter:
         html.append("\\end{align*}")
         html.append("$$")
         html.append("</div>")
+        
+        # Canonical Form
+        html.append("<h3 class='text-xl font-bold text-gray-800 mb-4 mt-6'>Каноническая форма</h3>")
+        html.append("<div class='overflow-x-auto bg-gray-50 p-4 rounded-lg'>")
+        html.append("$$")
+        html.append("\\begin{align*}")
+        n_orig = len(problem.c)
+        for i, row in enumerate(problem.A):
+            terms = []
+            for j, val in enumerate(row):
+                if val != 0:
+                    sign = "+" if val > 0 and terms else ("" if val > 0 else "-")
+                    v_abs = abs(val)
+                    coeff = str(v_abs) if v_abs != 1 else ""
+                    terms.append(f"{sign} {coeff}x_{{{j+1}}}")
+            row_str = " ".join(terms) if terms else "0"
+            if row_str.startswith("+ "):
+                row_str = row_str[2:]
+            row_str += f" + x_{{{n_orig + i + 1}}}"
+            html.append(f"{row_str} &= {problem.b[i]} \\\\")
+            
+        html.append("x &\\geq 0")
+        html.append("\\end{align*}")
+        html.append("$$")
+        html.append("</div>")
+
+        # Dual Form
+        html.append("<h3 class='text-xl font-bold text-gray-800 mb-4 mt-6'>Двойственная задача</h3>")
+        html.append("<div class='overflow-x-auto bg-gray-50 p-4 rounded-lg'>")
+        html.append("$$")
+        html.append("\\begin{align*}")
+        dual_obj = []
+        for i, b_val in enumerate(problem.b):
+            if b_val != 0:
+                sign = "+" if b_val > 0 and dual_obj else ("" if b_val > 0 else "-")
+                b_abs = abs(b_val)
+                coeff = str(b_abs) if b_abs != 1 else ""
+                dual_obj.append(f"{sign} {coeff}u_{{{i+1}}}")
+        dual_obj_str = " ".join(dual_obj) if dual_obj else "0"
+        if dual_obj_str.startswith("+ "):
+            dual_obj_str = dual_obj_str[2:]
+        dual_target = "\\min" if problem.is_max else "\\max"
+        html.append(f"{dual_obj_str} &\\to {dual_target} \\\\")
+        
+        for j in range(len(problem.c)):
+            terms = []
+            for i in range(len(problem.A)):
+                val = problem.A[i][j]
+                if val != 0:
+                    sign = "+" if val > 0 and terms else ("" if val > 0 else "-")
+                    v_abs = abs(val)
+                    coeff = str(v_abs) if v_abs != 1 else ""
+                    terms.append(f"{sign} {coeff}u_{{{i+1}}}")
+            row_str = " ".join(terms) if terms else "0"
+            if row_str.startswith("+ "):
+                row_str = row_str[2:]
+            sign_str = "\\geq" if problem.is_max else "\\leq"
+            html.append(f"{row_str} &{sign_str} {problem.c[j]} \\\\")
+            
+        html.append("u &\\geq 0")
+        html.append("\\end{align*}")
+        html.append("$$")
+        html.append("</div>")
+
         html.append("</div>")
         
         for step in steps:

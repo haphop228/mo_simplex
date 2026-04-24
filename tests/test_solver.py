@@ -29,6 +29,32 @@ def test_solver_example_1_max():
     obj_val = sum(c_B[i] * final_step.x_B[i] for i in range(len(final_step.N)))
     assert obj_val == Fraction(48)
 
+def test_solver_example_2_max():
+    # 5x1 + 4x2 -> max
+    # x1 + x2 <= 5
+    # 10x1 + 6x2 <= 45
+    # x1 <= 3
+    c = [Fraction(5), Fraction(4)]
+    A = [
+        [Fraction(1), Fraction(1)],
+        [Fraction(10), Fraction(6)],
+        [Fraction(1), Fraction(0)]
+    ]
+    b = [Fraction(5), Fraction(45), Fraction(3)]
+    signs = ['<=', '<=', '<=']
+    
+    problem = LinearProblem(c=c, A=A, b=b, signs=signs, is_max=True)
+    solver = SimplexSolver(problem)
+    
+    steps = list(solver.solve())
+    
+    final_step = steps[-1]
+    assert final_step.is_optimal == True
+    
+    c_B = [solver.c[idx] for idx in final_step.N]
+    obj_val = sum(c_B[i] * final_step.x_B[i] for i in range(len(final_step.N)))
+    assert obj_val == Fraction(23)
+
 def test_solver_unbounded():
     # 2x1 + x2 -> max
     # -x1 + x2 <= 2

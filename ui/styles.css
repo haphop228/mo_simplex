@@ -25,6 +25,7 @@ input[type=number] {
     
     body {
         background-color: white !important;
+        font-size: var(--print-font-size, 14px) !important;
     }
     
     .no-print {

@@ -162,5 +162,16 @@ function resetApp() {
     document.getElementById('solution-content').innerHTML = '';
 }
 
+function updatePrintFontSize() {
+    const size = document.getElementById('print-font-size').value;
+    let style = document.getElementById('dynamic-print-style');
+    if (!style) {
+        style = document.createElement('style');
+        style.id = 'dynamic-print-style';
+        document.head.appendChild(style);
+    }
+    style.innerHTML = `@media print { html, body, #solution-content, .katex { font-size: ${size}px !important; } }`;
+}
+
 // Init form on load
 window.onload = buildForm;
