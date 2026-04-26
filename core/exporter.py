@@ -28,6 +28,21 @@ class Exporter:
         return f"\\begin{{bmatrix}}\n{body}\n\\end{{bmatrix}}"
 
     @staticmethod
+    def _basis_set_latex(N: List[int]) -> str:
+        """Возвращает LaTeX для множества базисных индексов в фигурных скобках."""
+        indices = ", ".join(str(n + 1) for n in N)
+        return f"\\{{{indices}\\}}"
+
+    @staticmethod
+    def _build_full_x_star(n_orig: int, N: List[int], x_B: List[Fraction]) -> List[Fraction]:
+        """Строит полный вектор x* размера n_orig (только исходные переменные)."""
+        x = [Fraction(0)] * n_orig
+        for idx, basis_var in enumerate(N):
+            if basis_var < n_orig:
+                x[basis_var] = x_B[idx]
+        return x
+
+    @staticmethod
     def generate_markdown(problem: LinearProblem, steps: List[SimplexStep], final_answer: Fraction, detailed: bool = False, hidden_steps: List[int] = None) -> str:
         hidden = set(hidden_steps or [])
         md = []
@@ -70,15 +85,25 @@ class Exporter:
             else:
                 sign_str = "="
             md.append(f"{row_str} &{sign_str} {problem.b[i]} \\\\")
-            
-        md.append("x &\\geq 0")
+
+        # Ограничения на переменные
+        n_orig = len(problem.c)
+        if problem.var_bounds:
+            for i, (lb, ub) in enumerate(problem.var_bounds):
+                lb_str = Exporter.frac_to_latex(lb) if lb is not None else "-\\infty"
+                ub_str = Exporter.frac_to_latex(ub) if ub is not None else "+\\infty"
+                if ub is None:
+                    md.append(f"x_{{{i+1}}} &\\geq {lb_str} \\\\")
+                else:
+                    md.append(f"{lb_str} \\leq x_{{{i+1}}} &\\leq {ub_str} \\\\")
+        else:
+            md.append("x &\\geq 0")
         md.append("\\end{align*}")
         md.append("$$\n")
         
         md.append("## Каноническая форма")
         md.append("$$")
         md.append("\\begin{align*}")
-        n_orig = len(problem.c)
         for i, row in enumerate(problem.A):
             terms = []
             for j, val in enumerate(row):
@@ -143,9 +168,11 @@ class Exporter:
                 
             md.append(f"### Шаг {step.iteration}")
             
-            md.append(f"**Базис N:** $({', '.join(str(n+1) for n in step.N)})$  ")
+            # Пункт 8+9: N в фигурных скобках, N^+
+            basis_set = Exporter._basis_set_latex(step.N)
+            md.append(f"**Базис $N^+$:** $N^+ = {basis_set}$  ")
             md.append(f"**Текущий план $x_B$:**  \n$$ {Exporter.vec_to_latex(step.x_B)} $$  ")
-            md.append(f"**Обратная матрица $B^{{-1}}$:**  \n$$ {Exporter.mat_to_latex(step.B_inv)} $$  ")
+            md.append(f"**Обратная базисная матрица $B^{{-1}}$:**  \n$$ {Exporter.mat_to_latex(step.B_inv)} $$  ")
             
             if detailed and step.c_B is not None:
                 c_b_str = " \\begin{bmatrix} " + " & ".join(Exporter.frac_to_latex(x) for x in step.c_B) + " \\end{bmatrix} "
@@ -153,21 +180,34 @@ class Exporter:
             else:
                 md.append(f"**Вектор оценок $u_0$:**  \n$$ {Exporter.vec_to_latex(step.u_0, is_column=False)} $$  ")
             
-            if detailed and step.diffs is not None and not step.is_optimal:
+            # Пункт 5+6: проверка оптимальности с явным указанием нарушения и нулями для базисных
+            if step.diffs is not None and not step.is_optimal:
                 md.append("**Проверка оптимальности $\\Delta_j = u_0 A_j - c_j$:**\n$$ \\begin{align*} ")
                 for j, diff in enumerate(step.diffs):
-                    if j not in step.N:
-                        md.append(f"\\Delta_{{{j+1}}} &= {Exporter.frac_to_latex(diff)} \\\\ ")
+                    # Пункт 6: показываем все переменные, включая базисные (нули)
+                    md.append(f"\\Delta_{{{j+1}}} &= {Exporter.frac_to_latex(diff)} \\\\ ")
+                md.append("\\end{align*} $$\n")
+                # Пункт 5: явное указание нарушающей переменной и базиса
+                if step.j_0 is not None:
+                    md.append(f"При $j = {step.j_0 + 1}$ нарушается условие $\\Delta_{{{step.j_0+1}}} < 0$, базис $N^+ = {basis_set}$.  ")
+            elif detailed and step.diffs is not None and step.is_optimal:
+                md.append("**Проверка оптимальности $\\Delta_j = u_0 A_j - c_j$:**\n$$ \\begin{align*} ")
+                for j, diff in enumerate(step.diffs):
+                    md.append(f"\\Delta_{{{j+1}}} &= {Exporter.frac_to_latex(diff)} \\\\ ")
                 md.append("\\end{align*} $$\n")
             
             if step.is_optimal:
                 md.append("\n-- **План оптимален.** Все двойственные ограничения выполнены.\n")
                 if final_answer is not None:
-                    md.append(f"**Ответ:** ${Exporter.frac_to_latex(final_answer)}$")
+                    # Пункт 10: ответ в виде вектора x* и целевой функции
+                    x_star = Exporter._build_full_x_star(len(problem.c), step.N, step.x_B)
+                    x_star_latex = Exporter.vec_to_latex(x_star)
+                    md.append(f"**Ответ:** $x^* = {x_star_latex}$, $f(x^*) = {Exporter.frac_to_latex(final_answer)}$")
             elif step.is_unbounded:
                 md.append("\n-- **Целевая функция не ограничена сверху. Решения нет.**\n")
             else:
-                md.append(f"\n-- **План не оптимален.** Вводим в базис $x_{{{step.j_0+1}}}$.\n")
+                # Пункт 4: сначала объясняем выбор j_0, потом z_0
+                md.append(f"\n-- **План не оптимален.** В базис вводится переменная $x_{{{step.j_0+1}}}$ — первая переменная с отрицательной разностью $\\Delta_{{{step.j_0+1}}} < 0$.\n")
                 
                 if detailed and step.z_0 is not None:
                     md.append(f"**Направляющий вектор $z_0 = B^{{-1}} A_{{{step.j_0+1}}}$:**  \n$$ z_0 = {Exporter.vec_to_latex(step.z_0)} $$  ")
@@ -175,8 +215,9 @@ class Exporter:
                     md.append(f"**Направляющий вектор $z_0$:**  \n$$ {Exporter.vec_to_latex(step.z_0)} $$  ")
                     
                 if detailed and step.ratios is not None:
+                    # Пункт 7: min в фигурных скобках
                     ratios_str = ", ".join(f"\\frac{{{Exporter.frac_to_latex(step.x_B[i])}}}{{{Exporter.frac_to_latex(step.z_0[i])}}}" for i, r in enumerate(step.ratios) if r is not None)
-                    md.append(f"**Шаг $t_0$:** $\\min({ratios_str}) = {Exporter.frac_to_latex(step.t_0)}$  ")
+                    md.append(f"**Шаг $t_0$:** $\\min\\left\\{{{ratios_str}\\right\\}} = {Exporter.frac_to_latex(step.t_0)}$  ")
                 else:
                     md.append(f"**Шаг $t_0$:** ${Exporter.frac_to_latex(step.t_0)}$  ")
                     
@@ -229,8 +270,19 @@ class Exporter:
             else:
                 sign_str = "="
             html.append(f"{row_str} &{sign_str} {problem.b[i]} \\\\")
-            
-        html.append("x &\\geq 0")
+
+        # Ограничения на переменные
+        n_orig = len(problem.c)
+        if problem.var_bounds:
+            for i, (lb, ub) in enumerate(problem.var_bounds):
+                lb_str = Exporter.frac_to_latex(lb) if lb is not None else "-\\infty"
+                ub_str = Exporter.frac_to_latex(ub) if ub is not None else "+\\infty"
+                if ub is None:
+                    html.append(f"x_{{{i+1}}} &\\geq {lb_str} \\\\")
+                else:
+                    html.append(f"{lb_str} \\leq x_{{{i+1}}} &\\leq {ub_str} \\\\")
+        else:
+            html.append("x &\\geq 0")
         html.append("\\end{align*}")
         html.append("$$")
         html.append("</div>")
@@ -240,7 +292,6 @@ class Exporter:
         html.append("<div class='overflow-x-auto bg-gray-50 p-4 rounded-lg'>")
         html.append("$$")
         html.append("\\begin{align*}")
-        n_orig = len(problem.c)
         for i, row in enumerate(problem.A):
             terms = []
             for j, val in enumerate(row):
@@ -313,13 +364,15 @@ class Exporter:
             
             html.append("<div class='grid grid-cols-1 md:grid-cols-2 gap-6'>")
             
+            # Пункт 8+9: N в фигурных скобках, N^+
+            basis_set = Exporter._basis_set_latex(step.N)
             html.append("<div>")
-            html.append(f"<p class='mb-2'><strong>Базис N:</strong> $({', '.join(str(n+1) for n in step.N)})$</p>")
+            html.append(f"<p class='mb-2'><strong>Базис $N^+$:</strong> $N^+ = {basis_set}$</p>")
             html.append(f"<p class='mb-2'><strong>Текущий план $x_B$:</strong></p><div class='overflow-x-auto'>$$ {Exporter.vec_to_latex(step.x_B)} $$</div>")
             html.append("</div>")
             
             html.append("<div>")
-            html.append(f"<p class='mb-2'><strong>Обратная матрица $B^{{-1}}$:</strong></p><div class='overflow-x-auto'>$$ {Exporter.mat_to_latex(step.B_inv)} $$</div>")
+            html.append(f"<p class='mb-2'><strong>Обратная базисная матрица $B^{{-1}}$:</strong></p><div class='overflow-x-auto'>$$ {Exporter.mat_to_latex(step.B_inv)} $$</div>")
             
             if detailed and step.c_B is not None:
                 c_b_str = " \\begin{bmatrix} " + " & ".join(Exporter.frac_to_latex(x) for x in step.c_B) + " \\end{bmatrix} "
@@ -330,24 +383,40 @@ class Exporter:
             
             html.append("</div>")
             
-            if detailed and step.diffs is not None and not step.is_optimal:
+            # Пункт 5+6: проверка оптимальности с явным указанием нарушения и нулями для базисных
+            if step.diffs is not None and not step.is_optimal:
+                html.append("<div class='mt-4 bg-gray-50 p-4 rounded'>")
+                html.append("<p class='font-semibold mb-2'>Проверка оптимальности $\\Delta_j = u_0 A_j - c_j$:</p>")
+                html.append("<div class='overflow-x-auto'>$$ \\begin{align*} ")
+                # Пункт 6: показываем все переменные, включая базисные (нули)
+                for j, diff in enumerate(step.diffs):
+                    html.append(f"\\Delta_{{{j+1}}} &= {Exporter.frac_to_latex(diff)} \\\\ ")
+                html.append("\\end{align*} $$</div>")
+                # Пункт 5: явное указание нарушающей переменной и базиса
+                if step.j_0 is not None:
+                    html.append(f"<p class='mt-2 text-red-600'>При $j = {step.j_0 + 1}$ нарушается условие: $\\Delta_{{{step.j_0+1}}} = {Exporter.frac_to_latex(step.diffs[step.j_0])} < 0$, базис $N^+ = {basis_set}$.</p>")
+                html.append("</div>")
+            elif detailed and step.diffs is not None and step.is_optimal:
                 html.append("<div class='mt-4 bg-gray-50 p-4 rounded'>")
                 html.append("<p class='font-semibold mb-2'>Проверка оптимальности $\\Delta_j = u_0 A_j - c_j$:</p>")
                 html.append("<div class='overflow-x-auto'>$$ \\begin{align*} ")
                 for j, diff in enumerate(step.diffs):
-                    if j not in step.N:
-                        html.append(f"\\Delta_{{{j+1}}} &= {Exporter.frac_to_latex(diff)} \\\\ ")
+                    html.append(f"\\Delta_{{{j+1}}} &= {Exporter.frac_to_latex(diff)} \\\\ ")
                 html.append("\\end{align*} $$</div></div>")
             
             html.append("<div class='mt-6 pt-4 border-t border-gray-100 bg-gray-50 p-4 rounded'>")
             if step.is_optimal:
                 html.append("<p class='text-green-700 font-bold'>&check; План оптимален. Все двойственные ограничения выполнены.</p>")
                 if final_answer is not None:
-                    html.append(f"<p class='text-xl mt-2'><strong>Ответ:</strong> ${Exporter.frac_to_latex(final_answer)}$</p>")
+                    # Пункт 10: ответ в виде вектора x* и целевой функции
+                    x_star = Exporter._build_full_x_star(len(problem.c), step.N, step.x_B)
+                    x_star_latex = Exporter.vec_to_latex(x_star)
+                    html.append(f"<p class='text-xl mt-2'><strong>Ответ:</strong> $x^* = {x_star_latex}$, $\\quad f(x^*) = {Exporter.frac_to_latex(final_answer)}$</p>")
             elif step.is_unbounded:
                 html.append("<p class='text-red-600 font-bold'>&cross; Целевая функция не ограничена сверху. Решения нет.</p>")
             else:
-                html.append(f"<p class='text-gray-700 font-medium'>План не оптимален. Вводим в базис $x_{{{step.j_0+1}}}$.</p>")
+                # Пункт 4: сначала объясняем выбор j_0, потом z_0
+                html.append(f"<p class='text-gray-700 font-medium'>План не оптимален. В базис вводится переменная $x_{{{step.j_0+1}}}$ — первая переменная с отрицательной разностью $\\Delta_{{{step.j_0+1}}} &lt; 0$.</p>")
                 html.append("<div class='mt-2 grid grid-cols-1 md:grid-cols-2 gap-4'>")
                 
                 if detailed and step.z_0 is not None:
@@ -357,8 +426,10 @@ class Exporter:
                     
                 html.append("<div>")
                 if detailed and step.ratios is not None:
+                    # Пункт 7: min в фигурных скобках
                     ratios_str = ", ".join(f"\\frac{{{Exporter.frac_to_latex(step.x_B[i])}}}{{{Exporter.frac_to_latex(step.z_0[i])}}}" for i, r in enumerate(step.ratios) if r is not None)
-                    html.append(f"<strong>Шаг $t_0$:</strong> $\\min({ratios_str}) = {Exporter.frac_to_latex(step.t_0)}$<br><br>")
+                    t0_latex = Exporter.frac_to_latex(step.t_0)
+                    html.append(f"<strong>Шаг $t_0$:</strong> $\\min\\left\\{{{ratios_str}\\right\\}} = {t0_latex}$<br><br>")
                 else:
                     html.append(f"<strong>Шаг $t_0$:</strong> ${Exporter.frac_to_latex(step.t_0)}$<br><br>")
                     

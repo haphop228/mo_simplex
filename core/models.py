@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from fractions import Fraction
 
 @dataclass
@@ -9,6 +9,10 @@ class LinearProblem:
     b: List[Fraction]
     signs: List[str]  # '<=', '>=', '='
     is_max: bool = True
+    # var_bounds[i] = (lb, ub): нижняя и верхняя граница для x_{i+1}.
+    # lb=None означает -inf, ub=None означает +inf.
+    # По умолчанию None — все переменные >= 0 (стандартное условие).
+    var_bounds: Optional[List[Tuple[Optional[Fraction], Optional[Fraction]]]] = None
 
 @dataclass
 class SimplexStep:

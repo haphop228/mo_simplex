@@ -42,7 +42,6 @@
                     <label class="block text-sm font-medium text-gray-600 mb-1">Количество ограничений</label>
                     <input type="number" id="num-constraints" value="3" min="1" max="15" class="border border-gray-300 rounded px-3 py-2 w-24 text-center focus:ring-2 focus:ring-indigo-500 outline-none" onchange="buildForm()">
                 </div>
-                <button onclick="buildForm()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded border border-gray-300 transition">Обновить</button>
             </div>
 
             <div class="mb-8">
@@ -57,8 +56,15 @@
                 <div id="constraints-container" class="space-y-3 mb-3">
                     <!-- Заполняется из JS -->
                 </div>
+            </div>
+
+            <div class="mb-8">
+                <h3 class="text-lg font-semibold mb-3 text-gray-700">Ограничения на переменные:</h3>
+                <div id="var-bounds-container" class="space-y-2 mb-3">
+                    <!-- Заполняется из JS -->
+                </div>
                 <div class="text-sm text-gray-500 italic bg-gray-50 p-2 border border-gray-200 rounded">
-                    Условие неотрицательности переменных (<span class="font-semibold">x<sub>i</sub> &ge; 0</span>) встроено в алгоритм по умолчанию. Добавлять его отдельными строками не нужно!
+                    Задайте нижнюю и верхнюю границы для каждой переменной. Нижняя граница по умолчанию — <span class="font-semibold">0</span>. Верхняя граница — оставьте пустым для <span class="font-semibold">+∞</span>.
                 </div>
             </div>
 

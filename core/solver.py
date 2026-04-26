@@ -17,6 +17,17 @@ class SimplexSolver:
         
         self.n_vars = self.n_orig_vars
         self.N = []
+
+        # Применяем сдвиг переменных по нижним границам: x_i' = x_i - lb_i
+        # Это позволяет свести задачу к стандартной форме x' >= 0
+        if problem.var_bounds:
+            for i, (lb, ub) in enumerate(problem.var_bounds):
+                if lb is not None and lb != Fraction(0):
+                    # b_j -= A[j][i] * lb для каждого ограничения j
+                    for j in range(self.n_constraints):
+                        self.b[j] -= self.A[j][i] * lb
+                    # Целевая функция: c_i * x_i = c_i * (x_i' + lb) => константа c_i*lb добавляется к ответу
+                    # (учитывается в main.py при вычислении final_answer)
         
         self._to_canonical()
 

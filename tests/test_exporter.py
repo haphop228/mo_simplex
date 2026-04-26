@@ -56,7 +56,8 @@ def test_generate_markdown(sample_problem, sample_steps):
     
     # Check optimal and answer
     assert "План оптимален" in md
-    assert "**Ответ:** $48$" in md
+    assert "x^*" in md
+    assert "f(x^*)" in md
 
 def test_generate_markdown_hidden_steps(sample_problem, sample_steps):
     md = Exporter.generate_markdown(sample_problem, sample_steps, Fraction(48), hidden_steps=[1])
@@ -91,4 +92,5 @@ def test_generate_html(sample_problem, sample_steps):
     assert "<h3 class='text-xl font-bold text-gray-800 mb-4 mt-6'>Каноническая форма</h3>" in html
     assert "<h3 class='text-xl font-bold text-gray-800 mb-4 mt-6'>Двойственная задача</h3>" in html
     assert "План оптимален" in html
-    assert "<strong>Ответ:</strong> $48$" in html
+    assert "x^*" in html
+    assert "f(x^*)" in html

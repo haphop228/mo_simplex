@@ -19,7 +19,17 @@ class Api:
             signs = data['signs']
             is_max = data['is_max']
 
-            problem = LinearProblem(c, A, b, signs, is_max)
+            # Парсим ограничения на переменные (пункт 1)
+            var_bounds = None
+            raw_bounds = data.get('var_bounds')
+            if raw_bounds:
+                var_bounds = []
+                for lb_raw, ub_raw in raw_bounds:
+                    lb = Fraction(lb_raw).limit_denominator() if lb_raw is not None else None
+                    ub = Fraction(ub_raw).limit_denominator() if ub_raw is not None else None
+                    var_bounds.append((lb, ub))
+
+            problem = LinearProblem(c, A, b, signs, is_max, var_bounds=var_bounds)
             solver = SimplexSolver(problem)
             steps = list(solver.solve())
 
@@ -28,6 +38,11 @@ class Api:
                 final_step = steps[-1]
                 c_B = [solver.c[idx] for idx in final_step.N]
                 obj_val = sum(c_B[i] * final_step.x_B[i] for i in range(len(final_step.N)))
+                # Учитываем сдвиг от нижних границ переменных: f += sum(c_i * lb_i)
+                if var_bounds:
+                    for i, (lb, ub) in enumerate(var_bounds):
+                        if lb is not None and lb != Fraction(0):
+                            obj_val += (c[i] if is_max else -c[i]) * lb
                 # If minimizing, we need to multiply the result by -1
                 final_answer = obj_val if problem.is_max else -obj_val
 

@@ -92,6 +92,50 @@ function buildForm() {
 
         constrContainer.appendChild(row);
     }
+
+    // Build Variable Bounds (пункт 1)
+    const boundsContainer = document.getElementById('var-bounds-container');
+    boundsContainer.innerHTML = '';
+    for (let i = 0; i < numVars; i++) {
+        const row = document.createElement('div');
+        row.className = 'flex flex-wrap items-center space-x-2 p-2 bg-gray-50 rounded border border-gray-100';
+
+        const lbInput = document.createElement('input');
+        lbInput.type = 'number';
+        lbInput.className = `var-lb var-lb-${i} border border-gray-300 rounded px-2 py-1 w-20 text-center focus:ring-2 focus:ring-indigo-500 outline-none`;
+        lbInput.value = '0';
+        lbInput.placeholder = '-∞';
+        row.appendChild(lbInput);
+
+        const leq1 = document.createElement('span');
+        leq1.innerHTML = '&le;';
+        leq1.className = 'text-gray-500 font-bold';
+        row.appendChild(leq1);
+
+        const varLabel = document.createElement('span');
+        varLabel.innerHTML = `x<sub>${i+1}</sub>`;
+        varLabel.className = 'font-semibold text-gray-700';
+        row.appendChild(varLabel);
+
+        const leq2 = document.createElement('span');
+        leq2.innerHTML = '&le;';
+        leq2.className = 'text-gray-500 font-bold';
+        row.appendChild(leq2);
+
+        const ubInput = document.createElement('input');
+        ubInput.type = 'number';
+        ubInput.className = `var-ub var-ub-${i} border border-gray-300 rounded px-2 py-1 w-20 text-center focus:ring-2 focus:ring-indigo-500 outline-none`;
+        ubInput.value = '';
+        ubInput.placeholder = '+∞';
+        row.appendChild(ubInput);
+
+        const hint = document.createElement('span');
+        hint.className = 'text-xs text-gray-400 ml-2';
+        hint.innerText = '(пусто = ∞)';
+        row.appendChild(hint);
+
+        boundsContainer.appendChild(row);
+    }
 }
 
 async function solve() {
@@ -116,8 +160,18 @@ async function solve() {
         signs.push(document.querySelector(`.constr-sign-${i}`).value);
     }
 
-    const problemData = { 
-        c, A, b, signs, is_max,
+    // Собираем ограничения на переменные (пункт 1)
+    const var_bounds = [];
+    for (let i = 0; i < numVars; i++) {
+        const lbEl = document.querySelector(`.var-lb-${i}`);
+        const ubEl = document.querySelector(`.var-ub-${i}`);
+        const lb = lbEl && lbEl.value !== '' ? parseFloat(lbEl.value) : 0;
+        const ub = ubEl && ubEl.value !== '' ? parseFloat(ubEl.value) : null;
+        var_bounds.push([lb, ub]);
+    }
+
+    const problemData = {
+        c, A, b, signs, is_max, var_bounds,
         detailed: document.getElementById('detailed-mode') ? document.getElementById('detailed-mode').checked : false
     };
 
