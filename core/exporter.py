@@ -1,3 +1,4 @@
+import re
 from typing import List, Optional, Tuple
 from fractions import Fraction
 from core.models import LinearProblem, SimplexStep
@@ -319,14 +320,40 @@ class Exporter:
             )
             html.append("</div>")
 
-            html.append("<div class='space-y-2'>")
-            for ln in Exporter._render_step_lines(
+            html.append("<div class='space-y-2 overflow-x-auto'>")
+            md_lines = Exporter._render_step_lines(
                 step, detailed, final_answer,
                 x_original=x_original,
                 n_orig_vars=n_orig_vars,
-            ):
-                html.append(f"<div class='overflow-x-auto'>{ln}</div>")
+            )
+            html.append(Exporter._md_lines_to_html(md_lines))
             html.append("</div>")
             html.append("</div>")
 
         return "\n".join(html)
+
+    # ---------------------------------------------------------------- markdown → HTML
+    @staticmethod
+    def _md_lines_to_html(md_lines: List[str]) -> str:
+        """Преобразует список markdown-строк (с inline `$...$` и блочными `$$...$$`)
+        в HTML, сохраняя многострочные $$-блоки в едином DOM-узле для KaTeX.
+
+        Минимальный markdown-парсинг:
+        * `**bold**` → `<strong>bold</strong>`
+        * `*italic*` → `<em>italic</em>` (только если не часть `**`)
+        * trailing `  ` перед \n → `<br>`
+        * `---` на отдельной строке → `<hr>`
+        * пустая строка → `<br>` (визуальный отступ)
+        """
+        text = "\n".join(md_lines)
+
+        # Жирный (greedy не годится — используем .+?)
+        text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text, flags=re.DOTALL)
+
+        # Горизонтальная линия (отдельная строка из --- )
+        text = re.sub(r"(?m)^---\s*$", "<hr class='my-3 border-gray-200'>", text)
+
+        # Markdown two-space line break: "  \n" → "<br>\n"
+        text = re.sub(r"  +\n", "<br>\n", text)
+
+        return text

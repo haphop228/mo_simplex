@@ -285,13 +285,7 @@ async function solve() {
         document.getElementById('solution-content').innerHTML = resultHTML;
 
         // Render math
-        renderMathInElement(document.getElementById('solution-content'), {
-            delimiters: [
-                {left: '$$', right: '$$', display: true},
-                {left: '$', right: '$', display: false}
-            ],
-            throwOnError: false
-        });
+        renderMath(document.getElementById('solution-content'));
 
     } catch (e) {
         errDiv.innerText = "Системная ошибка связи с Python";
@@ -349,5 +343,22 @@ function updatePrintFontSize() {
     style.innerHTML = `@media print { html, body, #solution-content, .katex { font-size: ${size}px !important; } }`;
 }
 
+// Рендер LaTeX-формул в произвольном контейнере (общая утилита).
+function renderMath(el) {
+    if (!el || typeof renderMathInElement !== 'function') return;
+    renderMathInElement(el, {
+        delimiters: [
+            {left: '$$', right: '$$', display: true},
+            {left: '$',  right: '$',  display: false}
+        ],
+        throwOnError: false
+    });
+}
+
 // Init form on load
-window.onload = buildForm;
+window.onload = function () {
+    buildForm();
+    // Рендерим статические $...$ в форме ввода (чекбокс канонической формы,
+    // подсказки про границы переменных и т.п.).
+    renderMath(document.getElementById('input-screen'));
+};
