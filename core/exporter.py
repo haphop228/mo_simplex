@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from fractions import Fraction
 from core.models import LinearProblem, SimplexStep
 
@@ -85,13 +85,18 @@ class Exporter:
         return "Фаза I (вспомогательная задача)" if phase == 1 else "Фаза II"
 
     @staticmethod
-    def _render_step_lines(step: SimplexStep, detailed: bool, final_answer: Optional[Fraction]) -> List[str]:
+    def _render_step_lines(
+        step: SimplexStep,
+        detailed: bool,
+        final_answer: Optional[Fraction],
+        x_original: Optional[List[Fraction]] = None,
+        n_orig_vars: Optional[int] = None,
+    ) -> List[str]:
         """Возвращает линии Markdown-описания шага (без HTML-обёрток)."""
         lines: List[str] = []
 
         artificial_set = set(step.artificial_indices or [])
 
-        # Подписи базисных переменных (выделим искусственные звёздочкой)
         def var_label(idx: int) -> str:
             if idx in artificial_set:
                 return f"y_{{{idx+1}}}"
@@ -138,6 +143,15 @@ class Exporter:
                 lines.append("\n✓ **План оптимален.** Все двойственные ограничения выполнены.\n")
                 if final_answer is not None:
                     lines.append(f"**Ответ:** $f^* = {Exporter.frac_to_latex(final_answer)}$\n")
+
+                # Восстановленные исходные переменные (если были редукции)
+                if x_original is not None and n_orig_vars is not None:
+                    x_orig_str = Exporter.vec_to_latex(x_original[:n_orig_vars], is_column=False)
+                    lines.append(f"**Исходные переменные $x^*$:** $x^* = {x_orig_str}$\n")
+
+                # Раздел двойственного решения с учётом знаков (пункт №4)
+                lines.extend(Exporter._render_dual_solution(step))
+
             return lines
 
         if step.is_unbounded:
@@ -145,16 +159,18 @@ class Exporter:
             return lines
 
         # Обычный шаг: ввод/вывод
-        lines.append(f"\n**План не оптимален.** Вводим в базис $x_{{{step.j_0+1}}}$.\n")
-        if detailed and step.z_0 is not None:
-            lines.append(
-                f"**Направляющий вектор $z_0 = B \\cdot A_{{{step.j_0+1}}}$:**  \n"
-                f"$$ z_0 = {Exporter.vec_to_latex(step.z_0)} $$  "
-            )
-        else:
-            lines.append(f"**Направляющий вектор $z_0$:**  \n$$ z_0 = {Exporter.vec_to_latex(step.z_0)} $$  ")
+        j0_label = step.j_0 + 1 if step.j_0 is not None else "?"
+        lines.append(f"\n**План не оптимален.** Вводим в базис $x_{{{j0_label}}}$.\n")
+        if step.z_0 is not None:
+            if detailed:
+                lines.append(
+                    f"**Направляющий вектор $z_0 = B \\cdot A_{{{j0_label}}}$:**  \n"
+                    f"$$ z_0 = {Exporter.vec_to_latex(step.z_0)} $$  "
+                )
+            else:
+                lines.append(f"**Направляющий вектор $z_0$:**  \n$$ z_0 = {Exporter.vec_to_latex(step.z_0)} $$  ")
 
-        if step.ratios is not None and step.t_0 is not None:
+        if step.ratios is not None and step.t_0 is not None and step.z_0 is not None:
             if detailed:
                 ratios_str = ", ".join(
                     f"\\frac{{{Exporter.frac_to_latex(step.x_B[i])}}}{{{Exporter.frac_to_latex(step.z_0[i])}}}"
@@ -167,11 +183,59 @@ class Exporter:
             lines.append(f"Выводим из базиса $x_{{{step.s_0+1}}}$.\n")
         return lines
 
+    @staticmethod
+    def _render_dual_solution(step: SimplexStep) -> List[str]:
+        """Раздел двойственного решения с пояснением знаков (пункт №4 STATUS.md).
+
+        Выводит u_0 (внутренний, для приведённой задачи) и u_0_original
+        (для исходной задачи, с учётом инверсий строк и направления оптимизации).
+        """
+        lines: List[str] = []
+        lines.append("---\n")
+        lines.append("**Двойственное решение $u^*$:**\n")
+        lines.append(
+            f"$$ u^* = u_0 = {Exporter.vec_to_latex(step.u_0, is_column=False)} $$\n"
+        )
+
+        # Если есть инвертированные строки или задача на min — показываем пояснение
+        row_inv = step.row_inverted or []
+        has_inversions = any(row_inv)
+        u_orig = step.u_0_original
+
+        if u_orig is not None and (has_inversions or True):
+            lines.append(
+                "**Двойственное решение для исходной задачи** "
+                "(с учётом инверсий строк при $b_i < 0$ и направления оптимизации):\n"
+            )
+            lines.append(
+                f"$$ u^*_{{\\text{{orig}}}} = {Exporter.vec_to_latex(u_orig, is_column=False)} $$\n"
+            )
+
+            if has_inversions:
+                inv_indices = [i + 1 for i, inv in enumerate(row_inv) if inv]
+                inv_str = ", ".join(str(k) for k in inv_indices)
+                lines.append(
+                    f"*Строки {inv_str} были умножены на $-1$ при приведении $b \\geq 0$, "
+                    f"поэтому знак соответствующих $u_i$ инвертирован.*\n"
+                )
+
+        lines.append(
+            "**Проверка сильной двойственности:** "
+            "$f^* = c_B^T x_B = u_0^T b$\n"
+        )
+        return lines
+
     # ---------------------------------------------------------------- markdown
     @staticmethod
-    def generate_markdown(problem: LinearProblem, steps: List[SimplexStep],
-                          final_answer: Optional[Fraction], detailed: bool = False,
-                          hidden_steps: Optional[List[int]] = None) -> str:
+    def generate_markdown(
+        problem: LinearProblem,
+        steps: List[SimplexStep],
+        final_answer: Optional[Fraction],
+        detailed: bool = False,
+        hidden_steps: Optional[List[int]] = None,
+        x_original: Optional[List[Fraction]] = None,
+        n_orig_vars: Optional[int] = None,
+    ) -> str:
         hidden = set(hidden_steps or [])
         md: List[str] = []
         md.append("# Решение задачи модифицированным двухфазным симплекс-методом\n")
@@ -193,16 +257,26 @@ class Exporter:
                 last_phase = step.phase
 
             md.append(f"### Шаг {step.iteration}")
-            md.extend(Exporter._render_step_lines(step, detailed, final_answer))
+            md.extend(Exporter._render_step_lines(
+                step, detailed, final_answer,
+                x_original=x_original,
+                n_orig_vars=n_orig_vars,
+            ))
             md.append("---\n")
 
         return "\n".join(md)
 
     # ---------------------------------------------------------------- html
     @staticmethod
-    def generate_html(problem: LinearProblem, steps: List[SimplexStep],
-                      final_answer: Optional[Fraction], detailed: bool = False,
-                      hidden_steps: Optional[List[int]] = None) -> str:
+    def generate_html(
+        problem: LinearProblem,
+        steps: List[SimplexStep],
+        final_answer: Optional[Fraction],
+        detailed: bool = False,
+        hidden_steps: Optional[List[int]] = None,
+        x_original: Optional[List[Fraction]] = None,
+        n_orig_vars: Optional[int] = None,
+    ) -> str:
         hidden = set(hidden_steps or [])
         html: List[str] = []
 
@@ -245,9 +319,12 @@ class Exporter:
             )
             html.append("</div>")
 
-            # Все строки шага — в виде Markdown-подобного блока (KaTeX рендерит $...$/$$...$$).
             html.append("<div class='space-y-2'>")
-            for ln in Exporter._render_step_lines(step, detailed, final_answer):
+            for ln in Exporter._render_step_lines(
+                step, detailed, final_answer,
+                x_original=x_original,
+                n_orig_vars=n_orig_vars,
+            ):
                 html.append(f"<div class='overflow-x-auto'>{ln}</div>")
             html.append("</div>")
             html.append("</div>")

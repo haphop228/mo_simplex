@@ -1,6 +1,9 @@
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from fractions import Fraction
+
+# Тип границы переменной: None означает отсутствие ограничения (±∞)
+Bound = Optional[Fraction]
 
 @dataclass
 class LinearProblem:
@@ -9,6 +12,11 @@ class LinearProblem:
     b: List[Fraction]
     signs: List[str]  # '<=', '>=', '='
     is_max: bool = True
+    # Границы переменных: lower_bounds[j] = l_j, upper_bounds[j] = u_j.
+    # None означает отсутствие ограничения (-∞ / +∞).
+    # По умолчанию все переменные >= 0 (lower=0, upper=None).
+    lower_bounds: Optional[List[Bound]] = None
+    upper_bounds: Optional[List[Bound]] = None
 
 @dataclass
 class SimplexStep:
@@ -31,3 +39,9 @@ class SimplexStep:
     diffs: Optional[List[tuple]] = None   # список (j, Δ_j) — посчитанные до первого Δ<0 включительно
     ratios: Optional[List[Optional[Fraction]]] = None
     artificial_indices: Optional[List[int]] = None  # индексы искусственных переменных в расширенной задаче
+    # Карта восстановления исходных переменных из расширенных (для финального шага)
+    var_map: Optional[List[Tuple[str, int, Fraction]]] = None
+    # u_0 для исходной (не приведённой) задачи — с учётом инверсий строк
+    u_0_original: Optional[List[Fraction]] = None
+    # Знаки строк после приведения b>=0 (True = строка была инвертирована)
+    row_inverted: Optional[List[bool]] = None

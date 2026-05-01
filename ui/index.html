@@ -32,8 +32,8 @@
         <!-- Экран ввода задачи -->
         <div id="input-screen" class="w-full max-w-4xl bg-white shadow-lg rounded-xl p-8 border border-gray-200">
             <h2 class="text-2xl font-bold mb-6 text-gray-700">Ввод задачи линейного программирования</h2>
-            
-            <div class="mb-6 flex gap-4 items-end">
+
+            <div class="mb-6 flex flex-wrap gap-4 items-end">
                 <div>
                     <label class="block text-sm font-medium text-gray-600 mb-1">Количество переменных</label>
                     <input type="number" id="num-vars" value="2" min="1" max="10" class="border border-gray-300 rounded px-3 py-2 w-24 text-center focus:ring-2 focus:ring-indigo-500 outline-none" onchange="buildForm()">
@@ -43,6 +43,14 @@
                     <input type="number" id="num-constraints" value="3" min="1" max="15" class="border border-gray-300 rounded px-3 py-2 w-24 text-center focus:ring-2 focus:ring-indigo-500 outline-none" onchange="buildForm()">
                 </div>
                 <button onclick="buildForm()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded border border-gray-300 transition">Обновить</button>
+            </div>
+
+            <!-- Режим ввода -->
+            <div class="mb-6 flex items-center gap-3 p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
+                <input type="checkbox" id="canonical-mode" class="rounded accent-indigo-600 w-4 h-4" onchange="buildForm()">
+                <label for="canonical-mode" class="text-sm font-medium text-indigo-800 cursor-pointer">
+                    Задача уже в <strong>канонической форме</strong> ($Ax = b,\ x \geq 0$) — авто-определение начального базиса по столбцам-ортам
+                </label>
             </div>
 
             <div class="mb-8">
@@ -62,17 +70,28 @@
                 </div>
             </div>
 
+            <!-- Блок границ переменных -->
+            <div class="mb-8">
+                <div class="flex items-center gap-3 mb-3">
+                    <h3 class="text-lg font-semibold text-gray-700">Границы переменных:</h3>
+                    <span class="text-xs text-gray-400 italic">(оставьте пустым для стандартного $x_j \geq 0$; введите «inf» для $+\infty$, «-inf» для $-\infty$)</span>
+                </div>
+                <div id="bounds-container" class="space-y-2">
+                    <!-- Заполняется из JS -->
+                </div>
+            </div>
+
             <div class="flex justify-end">
                 <button onclick="solve()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-lg shadow transition transform hover:-translate-y-0.5">Решить по шагам</button>
             </div>
-            
+
             <div id="error-message" class="text-red-500 mt-4 hidden font-medium"></div>
         </div>
 
         <!-- Экран вывода решения -->
         <div id="result-screen" class="w-full hidden bg-white shadow-lg rounded-xl p-8 border border-gray-200 print-wrapper">
             <h2 id="result-title" class="text-2xl font-bold mb-6 text-gray-800 text-center">Ход решения</h2>
-            
+
             <div id="solution-content" class="text-lg space-y-8 leading-relaxed">
                 <!-- Контент генерируется из JS (LaTeX) -->
             </div>
