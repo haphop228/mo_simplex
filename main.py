@@ -24,7 +24,7 @@ class Api:
             steps = list(solver.solve())
 
             final_answer = None
-            if steps and steps[-1].is_optimal:
+            if steps and steps[-1].is_optimal and steps[-1].phase == 2:
                 final_step = steps[-1]
                 c_B = [solver.c[idx] for idx in final_step.N]
                 obj_val = sum(c_B[i] * final_step.x_B[i] for i in range(len(final_step.N)))
