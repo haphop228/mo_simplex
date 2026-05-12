@@ -1,8 +1,11 @@
-from typing import List
+import re
+from typing import List, Optional, Tuple
 from fractions import Fraction
 from core.models import LinearProblem, SimplexStep
 
+
 class Exporter:
+    # ---------------------------------------------------------------- LaTeX helpers
     @staticmethod
     def frac_to_latex(f: Fraction) -> str:
         if f.denominator == 1:
@@ -13,429 +16,344 @@ class Exporter:
 
     @staticmethod
     def vec_to_latex(v: List[Fraction], is_column: bool = True) -> str:
-        lines = " \\\\ ".join(Exporter.frac_to_latex(x) for x in v)
-        if not is_column:
+        if is_column:
+            lines = " \\\\ ".join(Exporter.frac_to_latex(x) for x in v)
+        else:
             lines = " & ".join(Exporter.frac_to_latex(x) for x in v)
-            return f"\\begin{{bmatrix}} {lines} \\end{{bmatrix}}"
         return f"\\begin{{bmatrix}} {lines} \\end{{bmatrix}}"
 
     @staticmethod
     def mat_to_latex(M: List[List[Fraction]]) -> str:
-        rows = []
-        for row in M:
-            rows.append(" & ".join(Exporter.frac_to_latex(x) for x in row))
+        rows = [" & ".join(Exporter.frac_to_latex(x) for x in row) for row in M]
         body = " \\\\ \n".join(rows)
         return f"\\begin{{bmatrix}}\n{body}\n\\end{{bmatrix}}"
 
+    # ---------------------------------------------------------------- problem statements
     @staticmethod
-    def _basis_set_latex(N: List[int]) -> str:
-        """Возвращает LaTeX для множества базисных индексов в фигурных скобках."""
-        indices = ", ".join(str(n + 1) for n in N)
-        return f"\\{{{indices}\\}}"
-
-    @staticmethod
-    def _build_full_x_star(n_orig: int, N: List[int], x_B: List[Fraction]) -> List[Fraction]:
-        """Строит полный вектор x* размера n_orig (только исходные переменные)."""
-        x = [Fraction(0)] * n_orig
-        for idx, basis_var in enumerate(N):
-            if basis_var < n_orig:
-                x[basis_var] = x_B[idx]
-        return x
-
-    @staticmethod
-    def generate_markdown(problem: LinearProblem, steps: List[SimplexStep], final_answer: Fraction, detailed: bool = False, hidden_steps: List[int] = None) -> str:
-        hidden = set(hidden_steps or [])
-        md = []
-        md.append("# Решение задачи модифицированным симплекс-методом\n")
-        
-        md.append("## Прямая задача")
-        md.append("$$")
-        md.append("\\begin{align*}")
-        
-        obj_terms = []
-        for i, c in enumerate(problem.c):
+    def _format_objective_terms(coeffs: List[Fraction], var_letter: str = "x") -> str:
+        terms = []
+        for i, c in enumerate(coeffs):
             if c != 0:
-                sign = "+" if c > 0 and obj_terms else ("" if c > 0 else "-")
+                sign = "+" if c > 0 and terms else ("" if c > 0 else "-")
                 c_abs = abs(c)
-                coeff = str(c_abs) if c_abs != 1 else ""
-                obj_terms.append(f"{sign} {coeff}x_{{{i+1}}}")
-        if not obj_terms:
-            obj_terms.append("0")
-        obj_str = " ".join(obj_terms).strip()
-        if obj_str.startswith("+ "):
-            obj_str = obj_str[2:]
-        target = "\\max" if problem.is_max else "\\min"
-        md.append(f"{obj_str} &\\to {target} \\\\")
-        
-        for i, row in enumerate(problem.A):
-            terms = []
-            for j, val in enumerate(row):
-                if val != 0:
-                    sign = "+" if val > 0 and terms else ("" if val > 0 else "-")
-                    v_abs = abs(val)
-                    coeff = str(v_abs) if v_abs != 1 else ""
-                    terms.append(f"{sign} {coeff}x_{{{j+1}}}")
-            row_str = " ".join(terms) if terms else "0"
-            if row_str.startswith("+ "):
-                row_str = row_str[2:]
-            if problem.signs[i] == '<=':
-                sign_str = "\\leq"
-            elif problem.signs[i] == '>=':
-                sign_str = "\\geq"
-            else:
-                sign_str = "="
-            md.append(f"{row_str} &{sign_str} {problem.b[i]} \\\\")
+                coeff = Exporter.frac_to_latex(c_abs) if c_abs != 1 else ""
+                terms.append(f"{sign} {coeff}{var_letter}_{{{i+1}}}")
+        if not terms:
+            terms.append("0")
+        s = " ".join(terms).strip()
+        if s.startswith("+ "):
+            s = s[2:]
+        return s
 
-        # Ограничения на переменные
-        n_orig = len(problem.c)
-        if problem.var_bounds:
-            for i, (lb, ub) in enumerate(problem.var_bounds):
-                lb_str = Exporter.frac_to_latex(lb) if lb is not None else "-\\infty"
-                ub_str = Exporter.frac_to_latex(ub) if ub is not None else "+\\infty"
-                if ub is None:
-                    md.append(f"x_{{{i+1}}} &\\geq {lb_str} \\\\")
-                else:
-                    md.append(f"{lb_str} \\leq x_{{{i+1}}} &\\leq {ub_str} \\\\")
-        else:
-            md.append("x &\\geq 0")
-        md.append("\\end{align*}")
-        md.append("$$\n")
-        
-        md.append("## Каноническая форма")
-        md.append("$$")
-        md.append("\\begin{align*}")
+    @staticmethod
+    def _format_problem_block(problem: LinearProblem) -> List[str]:
+        lines: List[str] = []
+        lines.append("$$")
+        lines.append("\\begin{align*}")
+        obj_str = Exporter._format_objective_terms(problem.c, "x")
+        target = "\\max" if problem.is_max else "\\min"
+        lines.append(f"{obj_str} &\\to {target} \\\\")
         for i, row in enumerate(problem.A):
-            terms = []
-            for j, val in enumerate(row):
-                if val != 0:
-                    sign = "+" if val > 0 and terms else ("" if val > 0 else "-")
-                    v_abs = abs(val)
-                    coeff = str(v_abs) if v_abs != 1 else ""
-                    terms.append(f"{sign} {coeff}x_{{{j+1}}}")
-            row_str = " ".join(terms) if terms else "0"
-            if row_str.startswith("+ "):
-                row_str = row_str[2:]
-            
-            # Canonical always adds x_{n_orig + i + 1}
-            row_str += f" + x_{{{n_orig + i + 1}}}"
-            md.append(f"{row_str} &= {problem.b[i]} \\\\")
-            
-        md.append("x &\\geq 0")
-        md.append("\\end{align*}")
-        md.append("$$\n")
+            row_str = Exporter._format_objective_terms(row, "x")
+            sign_map = {"<=": "\\leq", ">=": "\\geq", "=": "="}
+            lines.append(f"{row_str} &{sign_map[problem.signs[i]]} {Exporter.frac_to_latex(problem.b[i])} \\\\")
+        lines.append("x &\\geq 0")
+        lines.append("\\end{align*}")
+        lines.append("$$\n")
+        return lines
+
+    @staticmethod
+    def _format_dual_block(problem: LinearProblem) -> List[str]:
+        lines: List[str] = []
+        lines.append("$$")
+        lines.append("\\begin{align*}")
+        dual_obj_str = Exporter._format_objective_terms(problem.b, "u")
+        dual_target = "\\min" if problem.is_max else "\\max"
+        lines.append(f"{dual_obj_str} &\\to {dual_target} \\\\")
+        for j in range(len(problem.c)):
+            col = [problem.A[i][j] for i in range(len(problem.A))]
+            row_str = Exporter._format_objective_terms(col, "u")
+            sign_str = "\\geq" if problem.is_max else "\\leq"
+            lines.append(f"{row_str} &{sign_str} {Exporter.frac_to_latex(problem.c[j])} \\\\")
+        lines.append("u &\\geq 0")
+        lines.append("\\end{align*}")
+        lines.append("$$\n")
+        return lines
+
+    # ---------------------------------------------------------------- step rendering
+    @staticmethod
+    def _phase_label(phase: int) -> str:
+        return "Фаза I (вспомогательная задача)" if phase == 1 else "Фаза II"
+
+    @staticmethod
+    def _render_step_lines(
+        step: SimplexStep,
+        detailed: bool,
+        final_answer: Optional[Fraction],
+        x_original: Optional[List[Fraction]] = None,
+        n_orig_vars: Optional[int] = None,
+    ) -> List[str]:
+        """Возвращает линии Markdown-описания шага (без HTML-обёрток)."""
+        lines: List[str] = []
+
+        artificial_set = set(step.artificial_indices or [])
+
+        def var_label(idx: int) -> str:
+            if idx in artificial_set:
+                return f"y_{{{idx+1}}}"
+            return f"x_{{{idx+1}}}"
+
+        basis_labels = ", ".join(var_label(n) for n in step.N)
+        lines.append(f"**Базис $N$:** $({basis_labels})$  ")
+        lines.append(f"**Полный план $x$:**  ")
+        lines.append(f"$$ x = {Exporter.vec_to_latex(step.x_full, is_column=False)} $$  ")
+        lines.append(f"**Базисная подвыборка $x_B$:**  ")
+        lines.append(f"$$ x_B = {Exporter.vec_to_latex(step.x_B)} $$  ")
+        lines.append(f"**Обратная базисная матрица $B$:**  ")
+        lines.append(f"$$ B = {Exporter.mat_to_latex(step.B_inv)} $$  ")
+
+        if detailed and step.c_B is not None:
+            c_b_str = "\\begin{bmatrix} " + " & ".join(Exporter.frac_to_latex(x) for x in step.c_B) + " \\end{bmatrix}"
+            lines.append(
+                f"**Вектор оценок $u_0 = c_B B$:**  \n"
+                f"$$ u_0 = {c_b_str} \\cdot B = {Exporter.vec_to_latex(step.u_0, is_column=False)} $$  "
+            )
+        else:
+            lines.append(f"**Вектор оценок $u_0$:**  \n$$ u_0 = {Exporter.vec_to_latex(step.u_0, is_column=False)} $$  ")
+
+        # Δ_j: выводим только посчитанные (до первого отрицательного включительно).
+        if step.diffs:
+            lines.append("**Проверка оптимальности $\\Delta_j = u_0 A_j - c_j$ (по правилу первого индекса):**")
+            lines.append("$$ \\begin{align*} ")
+            for j, diff in step.diffs:
+                marker = ""
+                if diff < 0:
+                    marker = " \\quad <\\!0\\ \\Rightarrow\\ j_0 = " + str(j + 1)
+                lines.append(f"\\Delta_{{{j+1}}} &= {Exporter.frac_to_latex(diff)}{marker} \\\\ ")
+            lines.append("\\end{align*} $$\n")
+
+        # Финальные исходы шага
+        if step.is_infeasible:
+            lines.append("\n❌ **Задача несовместна.** На фазе I минимум суммы искусственных переменных строго положителен.\n")
+            return lines
+
+        if step.is_optimal:
+            if step.phase == 1:
+                lines.append("\n✓ **Фаза I завершена.** Все искусственные равны нулю — переходим к фазе II.\n")
+            else:
+                lines.append("\n✓ **План оптимален.** Все двойственные ограничения выполнены.\n")
+                if final_answer is not None:
+                    lines.append(f"**Ответ:** $f^* = {Exporter.frac_to_latex(final_answer)}$\n")
+
+                # Восстановленные исходные переменные (если были редукции)
+                if x_original is not None and n_orig_vars is not None:
+                    x_orig_str = Exporter.vec_to_latex(x_original[:n_orig_vars], is_column=False)
+                    lines.append(f"**Исходные переменные $x^*$:** $x^* = {x_orig_str}$\n")
+
+                # Раздел двойственного решения с учётом знаков (пункт №4)
+                lines.extend(Exporter._render_dual_solution(step))
+
+            return lines
+
+        if step.is_unbounded:
+            lines.append("\n❌ **Целевая функция не ограничена.** Решения нет.\n")
+            return lines
+
+        # Обычный шаг: ввод/вывод
+        j0_label = step.j_0 + 1 if step.j_0 is not None else "?"
+        lines.append(f"\n**План не оптимален.** Вводим в базис $x_{{{j0_label}}}$.\n")
+        if step.z_0 is not None:
+            if detailed:
+                lines.append(
+                    f"**Направляющий вектор $z_0 = B \\cdot A_{{{j0_label}}}$:**  \n"
+                    f"$$ z_0 = {Exporter.vec_to_latex(step.z_0)} $$  "
+                )
+            else:
+                lines.append(f"**Направляющий вектор $z_0$:**  \n$$ z_0 = {Exporter.vec_to_latex(step.z_0)} $$  ")
+
+        if step.ratios is not None and step.t_0 is not None and step.z_0 is not None:
+            if detailed:
+                ratios_str = ", ".join(
+                    f"\\frac{{{Exporter.frac_to_latex(step.x_B[i])}}}{{{Exporter.frac_to_latex(step.z_0[i])}}}"
+                    for i, r in enumerate(step.ratios) if r is not None
+                )
+                lines.append(f"**Шаг $t_0$:** $t_0 = \\min({ratios_str}) = {Exporter.frac_to_latex(step.t_0)}$  ")
+            else:
+                lines.append(f"**Шаг $t_0$:** $t_0 = {Exporter.frac_to_latex(step.t_0)}$  ")
+        if step.s_0 is not None:
+            lines.append(f"Выводим из базиса $x_{{{step.s_0+1}}}$.\n")
+        return lines
+
+    @staticmethod
+    def _render_dual_solution(step: SimplexStep) -> List[str]:
+        """Раздел двойственного решения с пояснением знаков (пункт №4 STATUS.md).
+
+        Выводит u_0 (внутренний, для приведённой задачи) и u_0_original
+        (для исходной задачи, с учётом инверсий строк и направления оптимизации).
+        """
+        lines: List[str] = []
+        lines.append("---\n")
+        lines.append("**Двойственное решение $u^*$:**\n")
+        lines.append(
+            f"$$ u^* = u_0 = {Exporter.vec_to_latex(step.u_0, is_column=False)} $$\n"
+        )
+
+        # Если есть инвертированные строки или задача на min — показываем пояснение
+        row_inv = step.row_inverted or []
+        has_inversions = any(row_inv)
+        u_orig = step.u_0_original
+
+        if u_orig is not None and (has_inversions or True):
+            lines.append(
+                "**Двойственное решение для исходной задачи** "
+                "(с учётом инверсий строк при $b_i < 0$ и направления оптимизации):\n"
+            )
+            lines.append(
+                f"$$ u^*_{{\\text{{orig}}}} = {Exporter.vec_to_latex(u_orig, is_column=False)} $$\n"
+            )
+
+            if has_inversions:
+                inv_indices = [i + 1 for i, inv in enumerate(row_inv) if inv]
+                inv_str = ", ".join(str(k) for k in inv_indices)
+                lines.append(
+                    f"*Строки {inv_str} были умножены на $-1$ при приведении $b \\geq 0$, "
+                    f"поэтому знак соответствующих $u_i$ инвертирован.*\n"
+                )
+
+        lines.append(
+            "**Проверка сильной двойственности:** "
+            "$f^* = c_B^T x_B = u_0^T b$\n"
+        )
+        return lines
+
+    # ---------------------------------------------------------------- markdown
+    @staticmethod
+    def generate_markdown(
+        problem: LinearProblem,
+        steps: List[SimplexStep],
+        final_answer: Optional[Fraction],
+        detailed: bool = False,
+        hidden_steps: Optional[List[int]] = None,
+        x_original: Optional[List[Fraction]] = None,
+        n_orig_vars: Optional[int] = None,
+    ) -> str:
+        hidden = set(hidden_steps or [])
+        md: List[str] = []
+        md.append("# Решение задачи модифицированным двухфазным симплекс-методом\n")
+
+        md.append("## Прямая задача")
+        md.extend(Exporter._format_problem_block(problem))
 
         md.append("## Двойственная задача")
-        md.append("$$")
-        md.append("\\begin{align*}")
-        dual_obj = []
-        for i, b_val in enumerate(problem.b):
-            if b_val != 0:
-                sign = "+" if b_val > 0 and dual_obj else ("" if b_val > 0 else "-")
-                b_abs = abs(b_val)
-                coeff = str(b_abs) if b_abs != 1 else ""
-                dual_obj.append(f"{sign} {coeff}u_{{{i+1}}}")
-        dual_obj_str = " ".join(dual_obj) if dual_obj else "0"
-        if dual_obj_str.startswith("+ "):
-            dual_obj_str = dual_obj_str[2:]
-        dual_target = "\\min" if problem.is_max else "\\max"
-        md.append(f"{dual_obj_str} &\\to {dual_target} \\\\")
-        
-        for j in range(len(problem.c)):
-            terms = []
-            for i in range(len(problem.A)):
-                val = problem.A[i][j]
-                if val != 0:
-                    sign = "+" if val > 0 and terms else ("" if val > 0 else "-")
-                    v_abs = abs(val)
-                    coeff = str(v_abs) if v_abs != 1 else ""
-                    terms.append(f"{sign} {coeff}u_{{{i+1}}}")
-            row_str = " ".join(terms) if terms else "0"
-            if row_str.startswith("+ "):
-                row_str = row_str[2:]
-            # If max, dual is >= c. If min, dual is <= c
-            sign_str = "\\geq" if problem.is_max else "\\leq"
-            md.append(f"{row_str} &{sign_str} {problem.c[j]} \\\\")
-            
-        md.append("u &\\geq 0")
-        md.append("\\end{align*}")
-        md.append("$$\n")
+        md.extend(Exporter._format_dual_block(problem))
 
         md.append("---\n")
-        
+
+        last_phase: Optional[int] = None
         for step in steps:
             if step.iteration in hidden:
                 continue
-                
+            if step.phase != last_phase:
+                md.append(f"\n## {Exporter._phase_label(step.phase)}\n")
+                last_phase = step.phase
+
             md.append(f"### Шаг {step.iteration}")
-            
-            # Пункт 8+9: N в фигурных скобках, N^+
-            basis_set = Exporter._basis_set_latex(step.N)
-            md.append(f"**Базис $N^+$:** $N^+ = {basis_set}$  ")
-            md.append(f"**Текущий план $x_B$:**  \n$$ {Exporter.vec_to_latex(step.x_B)} $$  ")
-            md.append(f"**Обратная базисная матрица $B^{{-1}}$:**  \n$$ {Exporter.mat_to_latex(step.B_inv)} $$  ")
-            
-            if detailed and step.c_B is not None:
-                c_b_str = " \\begin{bmatrix} " + " & ".join(Exporter.frac_to_latex(x) for x in step.c_B) + " \\end{bmatrix} "
-                md.append(f"**Вектор оценок $u_0 = c_B B^{{-1}}$:**  \n$$ u_0 = {c_b_str} B^{{-1}} = {Exporter.vec_to_latex(step.u_0, is_column=False)} $$  ")
-            else:
-                md.append(f"**Вектор оценок $u_0$:**  \n$$ {Exporter.vec_to_latex(step.u_0, is_column=False)} $$  ")
-            
-            # Пункт 5+6: проверка оптимальности с явным указанием нарушения и нулями для базисных
-            if step.diffs is not None and not step.is_optimal:
-                md.append("**Проверка оптимальности $\\Delta_j = u_0 A_j - c_j$:**\n$$ \\begin{align*} ")
-                for j, diff in enumerate(step.diffs):
-                    # Пункт 6: показываем все переменные, включая базисные (нули)
-                    md.append(f"\\Delta_{{{j+1}}} &= {Exporter.frac_to_latex(diff)} \\\\ ")
-                md.append("\\end{align*} $$\n")
-                # Пункт 5: явное указание нарушающей переменной и базиса
-                if step.j_0 is not None:
-                    md.append(f"При $j = {step.j_0 + 1}$ нарушается условие $\\Delta_{{{step.j_0+1}}} < 0$, базис $N^+ = {basis_set}$.  ")
-            elif detailed and step.diffs is not None and step.is_optimal:
-                md.append("**Проверка оптимальности $\\Delta_j = u_0 A_j - c_j$:**\n$$ \\begin{align*} ")
-                for j, diff in enumerate(step.diffs):
-                    md.append(f"\\Delta_{{{j+1}}} &= {Exporter.frac_to_latex(diff)} \\\\ ")
-                md.append("\\end{align*} $$\n")
-            
-            if step.is_optimal:
-                md.append("\n-- **План оптимален.** Все двойственные ограничения выполнены.\n")
-                if final_answer is not None:
-                    # Пункт 10: ответ в виде вектора x* и целевой функции
-                    x_star = Exporter._build_full_x_star(len(problem.c), step.N, step.x_B)
-                    x_star_latex = Exporter.vec_to_latex(x_star)
-                    md.append(f"**Ответ:** $x^* = {x_star_latex}$, $f(x^*) = {Exporter.frac_to_latex(final_answer)}$")
-            elif step.is_unbounded:
-                md.append("\n-- **Целевая функция не ограничена сверху. Решения нет.**\n")
-            else:
-                # Пункт 4: сначала объясняем выбор j_0, потом z_0
-                md.append(f"\n-- **План не оптимален.** В базис вводится переменная $x_{{{step.j_0+1}}}$ — первая переменная с отрицательной разностью $\\Delta_{{{step.j_0+1}}} < 0$.\n")
-                
-                if detailed and step.z_0 is not None:
-                    md.append(f"**Направляющий вектор $z_0 = B^{{-1}} A_{{{step.j_0+1}}}$:**  \n$$ z_0 = {Exporter.vec_to_latex(step.z_0)} $$  ")
-                else:
-                    md.append(f"**Направляющий вектор $z_0$:**  \n$$ {Exporter.vec_to_latex(step.z_0)} $$  ")
-                    
-                if detailed and step.ratios is not None:
-                    # Пункт 7: min в фигурных скобках
-                    ratios_str = ", ".join(f"\\frac{{{Exporter.frac_to_latex(step.x_B[i])}}}{{{Exporter.frac_to_latex(step.z_0[i])}}}" for i, r in enumerate(step.ratios) if r is not None)
-                    md.append(f"**Шаг $t_0$:** $\\min\\left\\{{{ratios_str}\\right\\}} = {Exporter.frac_to_latex(step.t_0)}$  ")
-                else:
-                    md.append(f"**Шаг $t_0$:** ${Exporter.frac_to_latex(step.t_0)}$  ")
-                    
-                md.append(f"Выводим из базиса $x_{{{step.s_0+1}}}$.\n")
-                
+            md.extend(Exporter._render_step_lines(
+                step, detailed, final_answer,
+                x_original=x_original,
+                n_orig_vars=n_orig_vars,
+            ))
             md.append("---\n")
-            
+
         return "\n".join(md)
 
+    # ---------------------------------------------------------------- html
     @staticmethod
-    def generate_html(problem: LinearProblem, steps: List[SimplexStep], final_answer: Fraction, detailed: bool = False, hidden_steps: List[int] = None) -> str:
+    def generate_html(
+        problem: LinearProblem,
+        steps: List[SimplexStep],
+        final_answer: Optional[Fraction],
+        detailed: bool = False,
+        hidden_steps: Optional[List[int]] = None,
+        x_original: Optional[List[Fraction]] = None,
+        n_orig_vars: Optional[int] = None,
+    ) -> str:
         hidden = set(hidden_steps or [])
-        html = []
+        html: List[str] = []
+
+        # Шапка: прямая + двойственная
         html.append("<div class='mb-8 pb-4 border-b border-gray-200'>")
         html.append("<h3 class='text-xl font-bold text-gray-800 mb-4'>Прямая задача</h3>")
         html.append("<div class='overflow-x-auto bg-gray-50 p-4 rounded-lg'>")
-        html.append("$$")
-        html.append("\\begin{align*}")
-        
-        obj_terms = []
-        for i, c in enumerate(problem.c):
-            if c != 0:
-                sign = "+" if c > 0 and obj_terms else ("" if c > 0 else "-")
-                c_abs = abs(c)
-                coeff = str(c_abs) if c_abs != 1 else ""
-                obj_terms.append(f"{sign} {coeff}x_{{{i+1}}}")
-        if not obj_terms:
-            obj_terms.append("0")
-        obj_str = " ".join(obj_terms).strip()
-        if obj_str.startswith("+ "):
-            obj_str = obj_str[2:]
-        target = "\\max" if problem.is_max else "\\min"
-        html.append(f"{obj_str} &\\to {target} \\\\")
-        
-        for i, row in enumerate(problem.A):
-            terms = []
-            for j, val in enumerate(row):
-                if val != 0:
-                    sign = "+" if val > 0 and terms else ("" if val > 0 else "-")
-                    v_abs = abs(val)
-                    coeff = str(v_abs) if v_abs != 1 else ""
-                    terms.append(f"{sign} {coeff}x_{{{j+1}}}")
-            row_str = " ".join(terms) if terms else "0"
-            if row_str.startswith("+ "):
-                row_str = row_str[2:]
-            if problem.signs[i] == '<=':
-                sign_str = "\\leq"
-            elif problem.signs[i] == '>=':
-                sign_str = "\\geq"
-            else:
-                sign_str = "="
-            html.append(f"{row_str} &{sign_str} {problem.b[i]} \\\\")
-
-        # Ограничения на переменные
-        n_orig = len(problem.c)
-        if problem.var_bounds:
-            for i, (lb, ub) in enumerate(problem.var_bounds):
-                lb_str = Exporter.frac_to_latex(lb) if lb is not None else "-\\infty"
-                ub_str = Exporter.frac_to_latex(ub) if ub is not None else "+\\infty"
-                if ub is None:
-                    html.append(f"x_{{{i+1}}} &\\geq {lb_str} \\\\")
-                else:
-                    html.append(f"{lb_str} \\leq x_{{{i+1}}} &\\leq {ub_str} \\\\")
-        else:
-            html.append("x &\\geq 0")
-        html.append("\\end{align*}")
-        html.append("$$")
-        html.append("</div>")
-        
-        # Canonical Form
-        html.append("<h3 class='text-xl font-bold text-gray-800 mb-4 mt-6'>Каноническая форма</h3>")
-        html.append("<div class='overflow-x-auto bg-gray-50 p-4 rounded-lg'>")
-        html.append("$$")
-        html.append("\\begin{align*}")
-        for i, row in enumerate(problem.A):
-            terms = []
-            for j, val in enumerate(row):
-                if val != 0:
-                    sign = "+" if val > 0 and terms else ("" if val > 0 else "-")
-                    v_abs = abs(val)
-                    coeff = str(v_abs) if v_abs != 1 else ""
-                    terms.append(f"{sign} {coeff}x_{{{j+1}}}")
-            row_str = " ".join(terms) if terms else "0"
-            if row_str.startswith("+ "):
-                row_str = row_str[2:]
-            row_str += f" + x_{{{n_orig + i + 1}}}"
-            html.append(f"{row_str} &= {problem.b[i]} \\\\")
-            
-        html.append("x &\\geq 0")
-        html.append("\\end{align*}")
-        html.append("$$")
+        html.extend(Exporter._format_problem_block(problem))
         html.append("</div>")
 
-        # Dual Form
         html.append("<h3 class='text-xl font-bold text-gray-800 mb-4 mt-6'>Двойственная задача</h3>")
         html.append("<div class='overflow-x-auto bg-gray-50 p-4 rounded-lg'>")
-        html.append("$$")
-        html.append("\\begin{align*}")
-        dual_obj = []
-        for i, b_val in enumerate(problem.b):
-            if b_val != 0:
-                sign = "+" if b_val > 0 and dual_obj else ("" if b_val > 0 else "-")
-                b_abs = abs(b_val)
-                coeff = str(b_abs) if b_abs != 1 else ""
-                dual_obj.append(f"{sign} {coeff}u_{{{i+1}}}")
-        dual_obj_str = " ".join(dual_obj) if dual_obj else "0"
-        if dual_obj_str.startswith("+ "):
-            dual_obj_str = dual_obj_str[2:]
-        dual_target = "\\min" if problem.is_max else "\\max"
-        html.append(f"{dual_obj_str} &\\to {dual_target} \\\\")
-        
-        for j in range(len(problem.c)):
-            terms = []
-            for i in range(len(problem.A)):
-                val = problem.A[i][j]
-                if val != 0:
-                    sign = "+" if val > 0 and terms else ("" if val > 0 else "-")
-                    v_abs = abs(val)
-                    coeff = str(v_abs) if v_abs != 1 else ""
-                    terms.append(f"{sign} {coeff}u_{{{i+1}}}")
-            row_str = " ".join(terms) if terms else "0"
-            if row_str.startswith("+ "):
-                row_str = row_str[2:]
-            sign_str = "\\geq" if problem.is_max else "\\leq"
-            html.append(f"{row_str} &{sign_str} {problem.c[j]} \\\\")
-            
-        html.append("u &\\geq 0")
-        html.append("\\end{align*}")
-        html.append("$$")
+        html.extend(Exporter._format_dual_block(problem))
+        html.append("</div>")
         html.append("</div>")
 
-        html.append("</div>")
-        
+        last_phase: Optional[int] = None
         for step in steps:
             if step.iteration in hidden:
                 continue
-            
-            html.append(f"<div class='step-container bg-white p-6 rounded-lg border border-gray-200 shadow-sm mb-6' id='step-card-{step.iteration}'>")
-            
+
+            if step.phase != last_phase:
+                phase_color = "indigo" if step.phase == 2 else "amber"
+                html.append(
+                    f"<h3 class='text-2xl font-bold text-{phase_color}-700 mt-8 mb-4 border-b-2 border-{phase_color}-300 pb-1'>"
+                    f"{Exporter._phase_label(step.phase)}</h3>"
+                )
+                last_phase = step.phase
+
+            html.append(
+                f"<div class='step-container bg-white p-6 rounded-lg border border-gray-200 shadow-sm mb-6' "
+                f"id='step-card-{step.iteration}'>"
+            )
             html.append("<div class='flex justify-between items-center border-b pb-2 mb-4'>")
-            html.append(f"<h4 class='text-lg font-bold text-indigo-700'>Шаг {step.iteration}</h4>")
-            html.append(f"<label class='text-sm text-gray-500 flex items-center cursor-pointer no-print'><input type='checkbox' class='mr-2 step-visibility-toggle' data-step='{step.iteration}' checked onchange='toggleStepVisibility(this)'> Показывать шаг</label>")
+            html.append(f"<h4 class='text-lg font-bold text-indigo-700'>Шаг {step.iteration} ({Exporter._phase_label(step.phase)})</h4>")
+            html.append(
+                f"<label class='text-sm text-gray-500 flex items-center cursor-pointer no-print'>"
+                f"<input type='checkbox' class='mr-2 step-visibility-toggle' data-step='{step.iteration}' "
+                f"checked onchange='toggleStepVisibility(this)'> Показывать шаг</label>"
+            )
             html.append("</div>")
-            
-            html.append("<div class='grid grid-cols-1 md:grid-cols-2 gap-6'>")
-            
-            # Пункт 8+9: N в фигурных скобках, N^+
-            basis_set = Exporter._basis_set_latex(step.N)
-            html.append("<div>")
-            html.append(f"<p class='mb-2'><strong>Базис $N^+$:</strong> $N^+ = {basis_set}$</p>")
-            html.append(f"<p class='mb-2'><strong>Текущий план $x_B$:</strong></p><div class='overflow-x-auto'>$$ {Exporter.vec_to_latex(step.x_B)} $$</div>")
-            html.append("</div>")
-            
-            html.append("<div>")
-            html.append(f"<p class='mb-2'><strong>Обратная базисная матрица $B^{{-1}}$:</strong></p><div class='overflow-x-auto'>$$ {Exporter.mat_to_latex(step.B_inv)} $$</div>")
-            
-            if detailed and step.c_B is not None:
-                c_b_str = " \\begin{bmatrix} " + " & ".join(Exporter.frac_to_latex(x) for x in step.c_B) + " \\end{bmatrix} "
-                html.append(f"<p class='mb-2'><strong>Вектор оценок $u_0 = c_B B^{{-1}}$:</strong></p><div class='overflow-x-auto'>$$u_0 = {c_b_str} B^{{-1}} = {Exporter.vec_to_latex(step.u_0, is_column=False)} $$</div>")
-            else:
-                html.append(f"<p class='mb-2'><strong>Вектор оценок $u_0$:</strong></p><div class='overflow-x-auto'>$$ {Exporter.vec_to_latex(step.u_0, is_column=False)} $$</div>")
-            html.append("</div>")
-            
-            html.append("</div>")
-            
-            # Пункт 5+6: проверка оптимальности с явным указанием нарушения и нулями для базисных
-            if step.diffs is not None and not step.is_optimal:
-                html.append("<div class='mt-4 bg-gray-50 p-4 rounded'>")
-                html.append("<p class='font-semibold mb-2'>Проверка оптимальности $\\Delta_j = u_0 A_j - c_j$:</p>")
-                html.append("<div class='overflow-x-auto'>$$ \\begin{align*} ")
-                # Пункт 6: показываем все переменные, включая базисные (нули)
-                for j, diff in enumerate(step.diffs):
-                    html.append(f"\\Delta_{{{j+1}}} &= {Exporter.frac_to_latex(diff)} \\\\ ")
-                html.append("\\end{align*} $$</div>")
-                # Пункт 5: явное указание нарушающей переменной и базиса
-                if step.j_0 is not None:
-                    html.append(f"<p class='mt-2 text-red-600'>При $j = {step.j_0 + 1}$ нарушается условие: $\\Delta_{{{step.j_0+1}}} = {Exporter.frac_to_latex(step.diffs[step.j_0])} < 0$, базис $N^+ = {basis_set}$.</p>")
-                html.append("</div>")
-            elif detailed and step.diffs is not None and step.is_optimal:
-                html.append("<div class='mt-4 bg-gray-50 p-4 rounded'>")
-                html.append("<p class='font-semibold mb-2'>Проверка оптимальности $\\Delta_j = u_0 A_j - c_j$:</p>")
-                html.append("<div class='overflow-x-auto'>$$ \\begin{align*} ")
-                for j, diff in enumerate(step.diffs):
-                    html.append(f"\\Delta_{{{j+1}}} &= {Exporter.frac_to_latex(diff)} \\\\ ")
-                html.append("\\end{align*} $$</div></div>")
-            
-            html.append("<div class='mt-6 pt-4 border-t border-gray-100 bg-gray-50 p-4 rounded'>")
-            if step.is_optimal:
-                html.append("<p class='text-green-700 font-bold'>&check; План оптимален. Все двойственные ограничения выполнены.</p>")
-                if final_answer is not None:
-                    # Пункт 10: ответ в виде вектора x* и целевой функции
-                    x_star = Exporter._build_full_x_star(len(problem.c), step.N, step.x_B)
-                    x_star_latex = Exporter.vec_to_latex(x_star)
-                    html.append(f"<p class='text-xl mt-2'><strong>Ответ:</strong> $x^* = {x_star_latex}$, $\\quad f(x^*) = {Exporter.frac_to_latex(final_answer)}$</p>")
-            elif step.is_unbounded:
-                html.append("<p class='text-red-600 font-bold'>&cross; Целевая функция не ограничена сверху. Решения нет.</p>")
-            else:
-                # Пункт 4: сначала объясняем выбор j_0, потом z_0
-                html.append(f"<p class='text-gray-700 font-medium'>План не оптимален. В базис вводится переменная $x_{{{step.j_0+1}}}$ — первая переменная с отрицательной разностью $\\Delta_{{{step.j_0+1}}} &lt; 0$.</p>")
-                html.append("<div class='mt-2 grid grid-cols-1 md:grid-cols-2 gap-4'>")
-                
-                if detailed and step.z_0 is not None:
-                    html.append(f"<div><strong>Направляющий вектор $z_0 = B^{{-1}} A_{{{step.j_0+1}}}$:</strong><br>$$ z_0 = {Exporter.vec_to_latex(step.z_0)} $$</div>")
-                else:
-                    html.append(f"<div><strong>Направляющий вектор $z_0$:</strong><br>$$ {Exporter.vec_to_latex(step.z_0)} $$</div>")
-                    
-                html.append("<div>")
-                if detailed and step.ratios is not None:
-                    # Пункт 7: min в фигурных скобках
-                    ratios_str = ", ".join(f"\\frac{{{Exporter.frac_to_latex(step.x_B[i])}}}{{{Exporter.frac_to_latex(step.z_0[i])}}}" for i, r in enumerate(step.ratios) if r is not None)
-                    t0_latex = Exporter.frac_to_latex(step.t_0)
-                    html.append(f"<strong>Шаг $t_0$:</strong> $\\min\\left\\{{{ratios_str}\\right\\}} = {t0_latex}$<br><br>")
-                else:
-                    html.append(f"<strong>Шаг $t_0$:</strong> ${Exporter.frac_to_latex(step.t_0)}$<br><br>")
-                    
-                html.append(f"<strong>Выводим из базиса:</strong> $x_{{{step.s_0+1}}}$.</div>")
-                html.append("</div>")
+
+            html.append("<div class='space-y-2 overflow-x-auto'>")
+            md_lines = Exporter._render_step_lines(
+                step, detailed, final_answer,
+                x_original=x_original,
+                n_orig_vars=n_orig_vars,
+            )
+            html.append(Exporter._md_lines_to_html(md_lines))
             html.append("</div>")
             html.append("</div>")
-            
+
         return "\n".join(html)
+
+    # ---------------------------------------------------------------- markdown → HTML
+    @staticmethod
+    def _md_lines_to_html(md_lines: List[str]) -> str:
+        """Преобразует список markdown-строк (с inline `$...$` и блочными `$$...$$`)
+        в HTML, сохраняя многострочные $$-блоки в едином DOM-узле для KaTeX.
+
+        Минимальный markdown-парсинг:
+        * `**bold**` → `<strong>bold</strong>`
+        * `*italic*` → `<em>italic</em>` (только если не часть `**`)
+        * trailing `  ` перед \n → `<br>`
+        * `---` на отдельной строке → `<hr>`
+        * пустая строка → `<br>` (визуальный отступ)
+        """
+        text = "\n".join(md_lines)
+
+        # Жирный (greedy не годится — используем .+?)
+        text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text, flags=re.DOTALL)
+
+        # Горизонтальная линия (отдельная строка из --- )
+        text = re.sub(r"(?m)^---\s*$", "<hr class='my-3 border-gray-200'>", text)
+
+        # Markdown two-space line break: "  \n" → "<br>\n"
+        text = re.sub(r"  +\n", "<br>\n", text)
+
+        return text

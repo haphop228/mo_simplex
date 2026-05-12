@@ -3,6 +3,7 @@ let currentProblemData = null;
 function buildForm() {
     const numVars = parseInt(document.getElementById('num-vars').value) || 2;
     const numConstraints = parseInt(document.getElementById('num-constraints').value) || 3;
+    const canonicalMode = document.getElementById('canonical-mode').checked;
 
     // Build Objective
     const objContainer = document.getElementById('objective-container');
@@ -10,7 +11,7 @@ function buildForm() {
     for (let i = 0; i < numVars; i++) {
         const wrap = document.createElement('div');
         wrap.className = 'flex items-center space-x-1';
-        
+
         if (i > 0) {
             const plus = document.createElement('span');
             plus.innerText = '+';
@@ -31,7 +32,7 @@ function buildForm() {
 
         objContainer.appendChild(wrap);
     }
-    
+
     const targetWrap = document.createElement('div');
     targetWrap.className = 'flex items-center space-x-2 ml-4';
     targetWrap.innerHTML = `
@@ -49,7 +50,7 @@ function buildForm() {
     for (let i = 0; i < numConstraints; i++) {
         const row = document.createElement('div');
         row.className = 'flex flex-wrap items-center space-x-2 p-2 bg-gray-50 rounded border border-gray-100';
-        
+
         for (let j = 0; j < numVars; j++) {
             if (j > 0) {
                 const plus = document.createElement('span');
@@ -60,7 +61,7 @@ function buildForm() {
 
             const wrap = document.createElement('div');
             wrap.className = 'flex items-center space-x-1';
-            
+
             const input = document.createElement('input');
             input.type = 'number';
             input.className = `constr-coeff constr-${i} border border-gray-300 rounded px-2 py-1 w-20 text-center focus:ring-2 focus:ring-indigo-500 outline-none`;
@@ -75,14 +76,27 @@ function buildForm() {
             row.appendChild(wrap);
         }
 
-        const signSelect = document.createElement('select');
-        signSelect.className = `constr-sign constr-sign-${i} border border-gray-300 rounded px-2 py-1 bg-white focus:ring-2 focus:ring-indigo-500 outline-none ml-2`;
-        signSelect.innerHTML = `
-            <option value="<=">&le;</option>
-            <option value=">=">&ge;</option>
-            <option value="=">=</option>
-        `;
-        row.appendChild(signSelect);
+        // В канонической форме все ограничения — равенства
+        if (canonicalMode) {
+            const eqLabel = document.createElement('span');
+            eqLabel.innerText = '=';
+            eqLabel.className = 'font-bold text-gray-600 ml-2';
+            // Скрытый select со значением '='
+            const signSelect = document.createElement('select');
+            signSelect.className = `constr-sign constr-sign-${i} hidden`;
+            signSelect.innerHTML = `<option value="=" selected>=</option>`;
+            row.appendChild(eqLabel);
+            row.appendChild(signSelect);
+        } else {
+            const signSelect = document.createElement('select');
+            signSelect.className = `constr-sign constr-sign-${i} border border-gray-300 rounded px-2 py-1 bg-white focus:ring-2 focus:ring-indigo-500 outline-none ml-2`;
+            signSelect.innerHTML = `
+                <option value="<=">&le;</option>
+                <option value=">=">&ge;</option>
+                <option value="=">=</option>
+            `;
+            row.appendChild(signSelect);
+        }
 
         const bInput = document.createElement('input');
         bInput.type = 'number';
@@ -93,46 +107,92 @@ function buildForm() {
         constrContainer.appendChild(row);
     }
 
-    // Build Variable Bounds (пункт 1)
-    const boundsContainer = document.getElementById('var-bounds-container');
+    // Build Bounds
+    buildBoundsBlock(numVars, canonicalMode);
+}
+
+function buildBoundsBlock(numVars, canonicalMode) {
+    const boundsContainer = document.getElementById('bounds-container');
     boundsContainer.innerHTML = '';
-    for (let i = 0; i < numVars; i++) {
+
+    for (let j = 0; j < numVars; j++) {
         const row = document.createElement('div');
-        row.className = 'flex flex-wrap items-center space-x-2 p-2 bg-gray-50 rounded border border-gray-100';
-
-        const lbInput = document.createElement('input');
-        lbInput.type = 'number';
-        lbInput.className = `var-lb var-lb-${i} border border-gray-300 rounded px-2 py-1 w-20 text-center focus:ring-2 focus:ring-indigo-500 outline-none`;
-        lbInput.value = '0';
-        lbInput.placeholder = '-∞';
-        row.appendChild(lbInput);
-
-        const leq1 = document.createElement('span');
-        leq1.innerHTML = '&le;';
-        leq1.className = 'text-gray-500 font-bold';
-        row.appendChild(leq1);
+        row.className = 'flex flex-wrap items-center gap-2 p-2 bg-gray-50 rounded border border-gray-100';
 
         const varLabel = document.createElement('span');
-        varLabel.innerHTML = `x<sub>${i+1}</sub>`;
-        varLabel.className = 'font-semibold text-gray-700';
+        varLabel.innerHTML = `x<sub>${j+1}</sub>:`;
+        varLabel.className = 'font-semibold text-gray-600 w-10';
         row.appendChild(varLabel);
 
-        const leq2 = document.createElement('span');
-        leq2.innerHTML = '&le;';
-        leq2.className = 'text-gray-500 font-bold';
-        row.appendChild(leq2);
+        // Нижняя граница
+        const lbWrap = document.createElement('div');
+        lbWrap.className = 'flex items-center gap-1';
+        const lbLabel = document.createElement('span');
+        lbLabel.className = 'text-xs text-gray-500';
+        lbLabel.innerText = 'от:';
+        lbWrap.appendChild(lbLabel);
+
+        const lbInput = document.createElement('input');
+        lbInput.type = 'text';
+        lbInput.className = `var-lb var-lb-${j} border border-gray-300 rounded px-2 py-1 w-24 text-center focus:ring-2 focus:ring-indigo-500 outline-none text-sm`;
+        // В канонической форме нижняя граница всегда 0
+        lbInput.value = '0';
+        lbInput.placeholder = '0';
+        if (canonicalMode) {
+            lbInput.disabled = true;
+            lbInput.className += ' bg-gray-100 text-gray-400';
+        }
+        lbWrap.appendChild(lbInput);
+        row.appendChild(lbWrap);
+
+        // Верхняя граница
+        const ubWrap = document.createElement('div');
+        ubWrap.className = 'flex items-center gap-1';
+        const ubLabel = document.createElement('span');
+        ubLabel.className = 'text-xs text-gray-500';
+        ubLabel.innerText = 'до:';
+        ubWrap.appendChild(ubLabel);
 
         const ubInput = document.createElement('input');
-        ubInput.type = 'number';
-        ubInput.className = `var-ub var-ub-${i} border border-gray-300 rounded px-2 py-1 w-20 text-center focus:ring-2 focus:ring-indigo-500 outline-none`;
+        ubInput.type = 'text';
+        ubInput.className = `var-ub var-ub-${j} border border-gray-300 rounded px-2 py-1 w-24 text-center focus:ring-2 focus:ring-indigo-500 outline-none text-sm`;
         ubInput.value = '';
-        ubInput.placeholder = '+∞';
-        row.appendChild(ubInput);
+        ubInput.placeholder = '+inf';
+        if (canonicalMode) {
+            ubInput.disabled = true;
+            ubInput.className += ' bg-gray-100 text-gray-400';
+        }
+        ubWrap.appendChild(ubInput);
+        row.appendChild(ubWrap);
 
+        // Подсказка о типе переменной
         const hint = document.createElement('span');
-        hint.className = 'text-xs text-gray-400 ml-2';
-        hint.innerText = '(пусто = ∞)';
+        hint.className = `var-hint-${j} text-xs text-indigo-500 italic ml-2`;
+        hint.innerText = 'x ≥ 0';
         row.appendChild(hint);
+
+        // Обновляем подсказку при изменении границ
+        const updateHint = () => {
+            const lb = lbInput.value.trim().toLowerCase();
+            const ub = ubInput.value.trim().toLowerCase();
+            const lbInf = lb === '-inf' || lb === '-infinity';
+            const ubInf = ub === '' || ub === 'inf' || ub === '+inf' || ub === 'infinity';
+            if (lbInf && ubInf) {
+                hint.innerText = 'свободная';
+                hint.className = `var-hint-${j} text-xs text-purple-500 italic ml-2`;
+            } else if (lb === '0' && ubInf) {
+                hint.innerText = 'x ≥ 0';
+                hint.className = `var-hint-${j} text-xs text-indigo-500 italic ml-2`;
+            } else if (!ubInf) {
+                hint.innerText = `${lb || '0'} ≤ x ≤ ${ub}`;
+                hint.className = `var-hint-${j} text-xs text-amber-600 italic ml-2`;
+            } else {
+                hint.innerText = `x ≥ ${lb}`;
+                hint.className = `var-hint-${j} text-xs text-green-600 italic ml-2`;
+            }
+        };
+        lbInput.addEventListener('input', updateHint);
+        ubInput.addEventListener('input', updateHint);
 
         boundsContainer.appendChild(row);
     }
@@ -145,6 +205,7 @@ async function solve() {
 
     const numVars = parseInt(document.getElementById('num-vars').value) || 2;
     const numConstraints = parseInt(document.getElementById('num-constraints').value) || 3;
+    const canonicalMode = document.getElementById('canonical-mode').checked;
 
     const c = Array.from(document.querySelectorAll('.obj-coeff')).map(el => parseFloat(el.value));
     const is_max = document.getElementById('obj-target').value === 'max';
@@ -160,24 +221,58 @@ async function solve() {
         signs.push(document.querySelector(`.constr-sign-${i}`).value);
     }
 
-    // Собираем ограничения на переменные (пункт 1)
-    const var_bounds = [];
-    for (let i = 0; i < numVars; i++) {
-        const lbEl = document.querySelector(`.var-lb-${i}`);
-        const ubEl = document.querySelector(`.var-ub-${i}`);
-        const lb = lbEl && lbEl.value !== '' ? parseFloat(lbEl.value) : 0;
-        const ub = ubEl && ubEl.value !== '' ? parseFloat(ubEl.value) : null;
-        var_bounds.push([lb, ub]);
+    // Сбор границ переменных
+    const lower_bounds = [];
+    const upper_bounds = [];
+    let hasCustomBounds = false;
+
+    for (let j = 0; j < numVars; j++) {
+        const lbEl = document.querySelector(`.var-lb-${j}`);
+        const ubEl = document.querySelector(`.var-ub-${j}`);
+
+        const lbStr = lbEl ? lbEl.value.trim().toLowerCase() : '0';
+        const ubStr = ubEl ? ubEl.value.trim().toLowerCase() : '';
+
+        // Нижняя граница
+        let lb = null;
+        if (lbStr === '' || lbStr === '0') {
+            lb = 0;
+        } else if (lbStr === '-inf' || lbStr === '-infinity') {
+            lb = null; // свободная снизу
+            hasCustomBounds = true;
+        } else {
+            lb = parseFloat(lbStr);
+            if (lb !== 0) hasCustomBounds = true;
+        }
+
+        // Верхняя граница
+        let ub = null;
+        if (ubStr === '' || ubStr === 'inf' || ubStr === '+inf' || ubStr === 'infinity') {
+            ub = null;
+        } else {
+            ub = parseFloat(ubStr);
+            hasCustomBounds = true;
+        }
+
+        lower_bounds.push(lb);
+        upper_bounds.push(ub);
     }
 
     const problemData = {
-        c, A, b, signs, is_max, var_bounds,
-        detailed: document.getElementById('detailed-mode') ? document.getElementById('detailed-mode').checked : false
+        c, A, b, signs, is_max,
+        canonical_mode: canonicalMode,
+        detailed: document.getElementById('detailed-mode') ? document.getElementById('detailed-mode').checked : false,
     };
+
+    // Передаём границы только если есть нестандартные
+    if (hasCustomBounds) {
+        problemData.lower_bounds = lower_bounds;
+        problemData.upper_bounds = upper_bounds;
+    }
 
     try {
         const resultHTML = await pywebview.api.solve(problemData);
-        if (resultHTML.error) {
+        if (resultHTML && resultHTML.error) {
             errDiv.innerText = "Ошибка: " + resultHTML.error;
             errDiv.classList.remove('hidden');
             return;
@@ -186,17 +281,11 @@ async function solve() {
         document.getElementById('input-screen').classList.add('hidden');
         document.getElementById('result-screen').classList.remove('hidden');
         document.getElementById('export-controls').classList.remove('hidden');
-        
+
         document.getElementById('solution-content').innerHTML = resultHTML;
-        
+
         // Render math
-        renderMathInElement(document.getElementById('solution-content'), {
-            delimiters: [
-                {left: '$$', right: '$$', display: true},
-                {left: '$', right: '$', display: false}
-            ],
-            throwOnError: false
-        });
+        renderMath(document.getElementById('solution-content'));
 
     } catch (e) {
         errDiv.innerText = "Системная ошибка связи с Python";
@@ -207,7 +296,7 @@ async function solve() {
 async function saveMarkdown() {
     const detailed = document.getElementById('detailed-mode') ? document.getElementById('detailed-mode').checked : false;
     const hiddenSteps = Array.from(document.querySelectorAll('.step-visibility-toggle:not(:checked)')).map(el => parseInt(el.dataset.step));
-    
+
     try {
         const result = await pywebview.api.save_markdown(detailed, hiddenSteps);
         if (result && result.error) {
@@ -254,5 +343,22 @@ function updatePrintFontSize() {
     style.innerHTML = `@media print { html, body, #solution-content, .katex { font-size: ${size}px !important; } }`;
 }
 
+// Рендер LaTeX-формул в произвольном контейнере (общая утилита).
+function renderMath(el) {
+    if (!el || typeof renderMathInElement !== 'function') return;
+    renderMathInElement(el, {
+        delimiters: [
+            {left: '$$', right: '$$', display: true},
+            {left: '$',  right: '$',  display: false}
+        ],
+        throwOnError: false
+    });
+}
+
 // Init form on load
-window.onload = buildForm;
+window.onload = function () {
+    buildForm();
+    // Рендерим статические $...$ в форме ввода (чекбокс канонической формы,
+    // подсказки про границы переменных и т.п.).
+    renderMath(document.getElementById('input-screen'));
+};
