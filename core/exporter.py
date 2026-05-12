@@ -36,8 +36,15 @@ class Exporter:
             if c != 0:
                 sign = "+" if c > 0 and terms else ("" if c > 0 else "-")
                 c_abs = abs(c)
-                coeff = Exporter.frac_to_latex(c_abs) if c_abs != 1 else ""
-                terms.append(f"{sign} {coeff}{var_letter}_{{{i+1}}}")
+                if c_abs == 1:
+                    coeff = ""
+                    sep = ""
+                else:
+                    coeff = Exporter.frac_to_latex(c_abs)
+                    # Если коэффициент — дробь (\frac{...}{...}), добавляем тонкий пробел
+                    # чтобы числитель/знаменатель не склеивались с именем переменной
+                    sep = "\\," if coeff.startswith("\\frac") else ""
+                terms.append(f"{sign} {coeff}{sep}{var_letter}_{{{i+1}}}")
         if not terms:
             terms.append("0")
         s = " ".join(terms).strip()

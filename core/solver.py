@@ -479,6 +479,59 @@ class SimplexSolver:
             result.append(sign * row_sign * u)
         return result
 
+    def compute_final_answer(self, last_step) -> Fraction:
+        """Вычисляет значение исходной целевой функции f* = c^T x*.
+
+        Учитывает:
+        1. Вклад базисных переменных (через внутренние коэффициенты c).
+        2. Константный сдвиг от нижних границ (lb != 0): c_j * lb_j.
+        3. Фиксированные переменные (lb == ub): c_j * lb_j (они убраны из задачи).
+        4. Направление оптимизации (min → инвертируем знак).
+        """
+        # Вклад базисных переменных (внутренние коэффициенты уже учитывают сдвиги x' = x - lb)
+        c_B = [self.c[idx] for idx in last_step.N]
+        obj_val = sum(
+            (c_B[i] * last_step.x_B[i] for i in range(len(last_step.N))),
+            Fraction(0)
+        )
+
+        # Добавляем константные вклады от редукций переменных
+        # _var_map содержит записи для всех исходных переменных
+        ext_idx = 0
+        for entry in self._var_map:
+            kind = entry[0]
+            orig_j = entry[1]
+            shift = entry[2]
+
+            if kind == 'fixed':
+                # Переменная была удалена из задачи: x_j = shift (= lb = ub)
+                # Её вклад: c_j * shift (используем исходный c, до инверсии для min)
+                orig_c_j = self.problem.c[orig_j]
+                internal_c_j = orig_c_j if self.is_max else -orig_c_j
+                obj_val += internal_c_j * shift
+                # fixed не занимает столбец в расширенной задаче
+            elif kind == 'direct' and shift != Fraction(0):
+                # x_j' = x_j - shift => c_j * x_j = c_j * x_j' + c_j * shift
+                # Внутренний obj_val уже содержит c_j * x_j', добавляем c_j * shift
+                # Используем внутренний коэффициент (уже с учётом is_max)
+                if ext_idx < len(self.c):
+                    obj_val += self.c[ext_idx] * shift
+                ext_idx += 1
+            elif kind == 'neg_shift':
+                # x_j' = shift - x_j => x_j = shift - x_j'
+                # c_j * x_j = c_j * shift - c_j * x_j'
+                # Внутренний c_j уже инвертирован: self.c[ext_idx] = -orig_c_j (или +orig_c_j для min)
+                # Нужно добавить c_j * shift (исходный c_j)
+                orig_c_j = self.problem.c[orig_j] if orig_j < self.n_orig_vars else Fraction(0)
+                internal_c_j = orig_c_j if self.is_max else -orig_c_j
+                obj_val += internal_c_j * shift
+                ext_idx += 1
+            else:
+                if kind != 'fixed':
+                    ext_idx += 1
+
+        return obj_val if self.is_max else -obj_val
+
     def recover_original_x(self, x_full: List[Fraction]) -> List[Fraction]:
         """Восстанавливает значения исходных переменных из расширенного вектора x.
 

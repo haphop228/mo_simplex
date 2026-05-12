@@ -65,12 +65,9 @@ class Api:
             x_original = None
             if steps and steps[-1].is_optimal and steps[-1].phase == 2:
                 final_step = steps[-1]
-                c_B = [solver.c[idx] for idx in final_step.N]
-                obj_val = sum(
-                    (c_B[i] * final_step.x_B[i] for i in range(len(final_step.N))),
-                    Fraction(0)
-                )
-                final_answer = Fraction(obj_val) if problem.is_max else Fraction(-obj_val)
+                # Используем метод солвера, который корректно учитывает все редукции:
+                # сдвиги нижних границ, фиксированные переменные, инверсии знаков.
+                final_answer = solver.compute_final_answer(final_step)
                 # Восстанавливаем исходные переменные
                 x_original = solver.recover_original_x(final_step.x_full)
 
@@ -91,6 +88,80 @@ class Api:
         except Exception as e:
             import traceback
             return {"error": str(e) + "\n" + traceback.format_exc()}
+
+    def save_html(self, detailed=False, hidden_steps=None):
+        """Сохраняет решение как самодостаточный HTML-файл для печати/PDF."""
+        if not self.last_problem or not self.last_steps:
+            return {"error": "Нет решенной задачи"}
+
+        try:
+            solver = self.last_solver
+            x_original = None
+            if self.last_steps and self.last_steps[-1].is_optimal and self.last_steps[-1].phase == 2:
+                x_original = solver.recover_original_x(self.last_steps[-1].x_full) if solver else None
+
+            content_html = Exporter.generate_html(
+                self.last_problem, self.last_steps, self.last_final_answer,
+                detailed=detailed, hidden_steps=hidden_steps,
+                x_original=x_original,
+                n_orig_vars=solver.n_orig_vars if solver else None,
+            )
+
+            # Читаем CSS для встраивания
+            import sys
+            if getattr(sys, 'frozen', False):
+                basedir = sys._MEIPASS
+            else:
+                basedir = os.path.dirname(os.path.abspath(__file__))
+            css_path = os.path.join(basedir, 'ui', 'styles.css')
+            try:
+                with open(css_path, 'r', encoding='utf-8') as f:
+                    extra_css = f.read()
+            except Exception:
+                extra_css = ""
+
+            # Самодостаточный HTML с KaTeX из CDN и встроенным CSS
+            full_html = f"""<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Решение симплекс-методом</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {{delimiters:[{{left:'$$',right:'$$',display:true}},{{left:'$',right:'$',display:false}}],throwOnError:false}});"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+{extra_css}
+@media print {{
+  .no-print {{ display: none !important; }}
+  body {{ font-size: 14px; }}
+}}
+</style>
+</head>
+<body class="bg-white text-gray-800 font-sans p-8 max-w-5xl mx-auto">
+<h1 class="text-2xl font-bold mb-6 text-center">Решение задачи модифицированным симплекс-методом</h1>
+{content_html}
+</body>
+</html>"""
+
+            window = webview.windows[0]
+            file_path = window.create_file_dialog(
+                webview.SAVE_DIALOG,
+                directory='',
+                save_filename='solution.html'
+            )
+
+            if file_path:
+                if isinstance(file_path, (tuple, list)):
+                    file_path = file_path[0]
+                with open(str(file_path), 'w', encoding='utf-8') as f:
+                    f.write(full_html)
+                return {"success": True}
+            return {"success": False, "reason": "cancelled"}
+        except Exception as e:
+            return {"error": str(e)}
 
     def save_markdown(self, detailed=False, hidden_steps=None):
         if not self.last_problem or not self.last_steps:

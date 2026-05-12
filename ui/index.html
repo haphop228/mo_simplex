@@ -23,7 +23,7 @@
                 <input type="number" id="print-font-size" value="14" min="8" max="24" class="text-black px-1 py-1 rounded w-16 focus:outline-none" onchange="updatePrintFontSize()">
             </div>
             <button onclick="saveMarkdown()" class="bg-indigo-800 hover:bg-indigo-700 px-4 py-2 rounded text-sm transition">Скачать Markdown</button>
-            <button onclick="window.print()" class="bg-indigo-800 hover:bg-indigo-700 px-4 py-2 rounded text-sm transition">Сохранить PDF</button>
+            <button onclick="saveHtml()" class="bg-indigo-800 hover:bg-indigo-700 px-4 py-2 rounded text-sm transition" title="Сохраняет HTML-файл. Откройте его в браузере и нажмите Ctrl+P → Сохранить как PDF">Сохранить PDF</button>
             <button onclick="resetApp()" class="bg-red-600 hover:bg-red-500 px-4 py-2 rounded text-sm transition ml-4">Новая задача</button>
         </div>
     </header>
