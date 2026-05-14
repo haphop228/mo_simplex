@@ -400,6 +400,8 @@ function resetApp() {
     document.getElementById('result-screen').classList.add('hidden');
     document.getElementById('export-controls').classList.add('hidden');
     document.getElementById('solution-content').innerHTML = '';
+    const oldStyle = document.getElementById('dynamic-print-style');
+    if (oldStyle) oldStyle.remove();
 }
 
 function updatePrintFontSize() {

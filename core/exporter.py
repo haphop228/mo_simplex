@@ -84,6 +84,21 @@ class Exporter:
         return lines
 
     @staticmethod
+    def _dual_var_sign(primal_sign: str, is_max: bool) -> str:
+        """Возвращает LaTeX-строку ограничения знака двойственной переменной.
+
+        Правило двойственности:
+        - Если прямая — max:  '<=' → u_i >= 0,  '>=' → u_i <= 0,  '=' → u_i ∈ ℝ
+        - Если прямая — min:  '>=' → u_i >= 0,  '<=' → u_i <= 0,  '=' → u_i ∈ ℝ
+        """
+        if primal_sign == '=':
+            return "\\in \\mathbb{R}"
+        natural_sign = '<=' if is_max else '>='
+        if primal_sign == natural_sign:
+            return "\\geq 0"
+        return "\\leq 0"
+
+    @staticmethod
     def _format_dual_block(problem: LinearProblem) -> List[str]:
         lines: List[str] = []
         lines.append("$$")
@@ -96,7 +111,20 @@ class Exporter:
             row_str = Exporter._format_objective_terms(col, "u")
             sign_str = "\\geq" if problem.is_max else "\\leq"
             lines.append(f"{row_str} &{sign_str} {Exporter.frac_to_latex(problem.c[j])} \\\\")
-        lines.append("u &\\geq 0")
+        # Знаки двойственных переменных — определяются типом каждого ограничения прямой задачи
+        m = len(problem.signs)
+        sign_groups: dict = {}  # sign_latex -> list of 1-based indices
+        for i, s in enumerate(problem.signs):
+            sg = Exporter._dual_var_sign(s, problem.is_max)
+            sign_groups.setdefault(sg, []).append(i + 1)
+        # Если все переменные имеют одинаковый знак — одна строка, иначе — поштучно
+        if len(sign_groups) == 1:
+            sg = next(iter(sign_groups))
+            lines.append(f"u &{sg}")
+        else:
+            for i, s in enumerate(problem.signs):
+                sg = Exporter._dual_var_sign(s, problem.is_max)
+                lines.append(f"u_{{{i+1}}} &{sg} \\\\")
         lines.append("\\end{align*}")
         lines.append("$$\n")
         return lines
