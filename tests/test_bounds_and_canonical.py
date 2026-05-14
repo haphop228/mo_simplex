@@ -368,3 +368,176 @@ class TestLowerAndUpperBoundCombined:
         assert x[1] >= Fraction(2)
         assert x[0] + x[1] == Fraction(10)
         assert s.compute_final_answer(last) == Fraction(10)
+
+
+# ============================================================ sanity: compute_final_answer ⟺ c·x
+class TestComputeFinalAnswerConsistency:
+    """Регрессионный тест для бага #4: compute_final_answer всегда должна
+    совпадать с прямым произведением c_orig^T x_orig."""
+
+    @staticmethod
+    def _build_and_check(c, A, b, signs, is_max=True,
+                         lower_bounds=None, upper_bounds=None):
+        p = LinearProblem(
+            c=[Fraction(x) for x in c],
+            A=[[Fraction(x) for x in r] for r in A],
+            b=[Fraction(x) for x in b],
+            signs=signs,
+            is_max=is_max,
+            lower_bounds=[Fraction(v) if v is not None else None
+                          for v in lower_bounds] if lower_bounds else None,
+            upper_bounds=[Fraction(v) if v is not None else None
+                          for v in upper_bounds] if upper_bounds else None,
+        )
+        s = SimplexSolver(p)
+        last = list(s.solve())[-1]
+        assert last.is_optimal, "задача должна быть разрешима"
+        x_orig = s.recover_original_x(last.x_full)
+        f_solver = s.compute_final_answer(last)
+        f_manual = sum(
+            (p.c[i] * x_orig[i] for i in range(s.n_orig_vars)),
+            Fraction(0),
+        )
+        assert f_solver == f_manual, (
+            f"f_solver={f_solver}, c^T x={f_manual}, x_orig={x_orig}"
+        )
+
+    def test_standard_no_bounds_max(self):
+        self._build_and_check(
+            c=[12, 3], A=[[4, 1], [2, 2], [6, 3]], b=[16, 22, 36],
+            signs=['<=', '<=', '<='], is_max=True,
+        )
+
+    def test_standard_no_bounds_min(self):
+        self._build_and_check(
+            c=[2, 3], A=[[1, 1], [2, 1]], b=[3, 4],
+            signs=['>=', '>='], is_max=False,
+        )
+
+    def test_with_lb_shift(self):
+        self._build_and_check(
+            c=[1, 1], A=[[1, 1]], b=[10], signs=['<='],
+            is_max=True, lower_bounds=[3, 0], upper_bounds=[10, None],
+        )
+
+    def test_with_negative_lb(self):
+        self._build_and_check(
+            c=[1, 0], A=[[1, 1]], b=[100], signs=['<='],
+            is_max=True, lower_bounds=[-5, 0], upper_bounds=[7, None],
+        )
+
+    def test_with_fixed_var(self):
+        self._build_and_check(
+            c=[1, 1, 1], A=[[1, 1, 1]], b=[10], signs=['<='],
+            is_max=True,
+            lower_bounds=[0, 2, -3], upper_bounds=[None, 2, None],
+        )
+
+    def test_with_free_var(self):
+        self._build_and_check(
+            c=[1, 1], A=[[1, 1]], b=[10], signs=['<='],
+            is_max=True, lower_bounds=[None, 2], upper_bounds=[None, None],
+        )
+
+    def test_xample_regression(self):
+        """Контрольная регрессия из xample.md: f*=7280, x*=[40,250,210]."""
+        self._build_and_check(
+            c=[46, 10, 14],
+            A=[[1, 1, 1], [1, 0, 0]],
+            b=[500, 40],
+            signs=['=', '>='],
+            is_max=False,
+            lower_bounds=[0, 0, 100], upper_bounds=[None, 250, None],
+        )
+
+
+# ============================================================ validate_solution (защитная сетка)
+class TestValidateSolution:
+    """Регрессия для бага #5: проверка того, что восстановленное решение
+    удовлетворяет ИСХОДНЫМ ограничениям задачи."""
+
+    @staticmethod
+    def _make_solver(lower_bounds=None, upper_bounds=None):
+        p = LinearProblem(
+            c=[Fraction(1), Fraction(0)],
+            A=[[Fraction(1), Fraction(1)]],
+            b=[Fraction(100)],
+            signs=['<='],
+            is_max=True,
+            lower_bounds=[Fraction(v) if v is not None else None
+                          for v in lower_bounds] if lower_bounds else None,
+            upper_bounds=[Fraction(v) if v is not None else None
+                          for v in upper_bounds] if upper_bounds else None,
+        )
+        return SimplexSolver(p)
+
+    def test_validate_valid_solution(self):
+        """Корректное решение → validate_solution возвращает пустой список."""
+        s = self._make_solver(
+            lower_bounds=[3, 0], upper_bounds=[10, None],
+        )
+        last = list(s.solve())[-1]
+        x = s.recover_original_x(last.x_full)
+        errs = s.validate_solution(x)
+        assert errs == [], f"неожиданные ошибки: {errs}"
+        # Также step.validation_errors должен быть None.
+        assert last.validation_errors is None
+
+    def test_validate_upper_bound_violation(self):
+        """Искусственно подсовываем x, нарушающий ub → validate возвращает ошибку."""
+        s = self._make_solver(
+            lower_bounds=[3, 0], upper_bounds=[10, None],
+        )
+        last = list(s.solve())[-1]
+        bad_x = [Fraction(100), Fraction(0)]  # ub=10, нарушение
+        errs = s.validate_solution(bad_x)
+        assert errs, "должна быть как минимум одна ошибка валидации"
+        assert any("upper_bound" in e for e in errs), errs
+
+    def test_validate_lower_bound_violation(self):
+        s = self._make_solver(
+            lower_bounds=[3, 0], upper_bounds=[10, None],
+        )
+        last = list(s.solve())[-1]
+        bad_x = [Fraction(1), Fraction(0)]  # lb=3, нарушение
+        errs = s.validate_solution(bad_x)
+        assert errs
+        assert any("lower_bound" in e for e in errs), errs
+
+    def test_validate_constraint_violation(self):
+        """Нарушение исходного ограничения x1+x2 <= 100."""
+        s = self._make_solver(
+            lower_bounds=[0, 0], upper_bounds=[None, None],
+        )
+        last = list(s.solve())[-1]
+        bad_x = [Fraction(60), Fraction(60)]  # 120 > 100
+        errs = s.validate_solution(bad_x)
+        assert errs
+        assert any("ограничение" in e for e in errs), errs
+
+    def test_validation_errors_on_final_step_is_none_for_correct_solve(self):
+        """Для любых корректно решённых задач из аудита #1-#4
+        step.validation_errors на финальном шаге = None."""
+        # Bug#1: lb=3, ub=10
+        s = self._make_solver(lower_bounds=[3, 0], upper_bounds=[10, None])
+        last = list(s.solve())[-1]
+        assert last.validation_errors is None
+
+        # Bug#1: lb=-5, ub=7
+        s = self._make_solver(lower_bounds=[-5, 0], upper_bounds=[7, None])
+        last = list(s.solve())[-1]
+        assert last.validation_errors is None
+
+        # Bug#2: fixed-в-середине
+        p = LinearProblem(
+            c=[Fraction(1)] * 3,
+            A=[[Fraction(1)] * 3],
+            b=[Fraction(10)],
+            signs=['<='],
+            is_max=True,
+            lower_bounds=[Fraction(0), Fraction(2), Fraction(-3)],
+            upper_bounds=[None, Fraction(2), None],
+        )
+        s2 = SimplexSolver(p)
+        last = list(s2.solve())[-1]
+        assert last.validation_errors is None, last.validation_errors

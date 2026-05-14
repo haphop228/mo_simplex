@@ -73,7 +73,8 @@ def test_generate_markdown_hidden_steps(sample_problem, sample_steps):
         sample_problem, sample_steps, Fraction(48), hidden_steps=[1]
     )
     assert "### Шаг 1" not in md
-    assert "### Шаг 2" in md
+    # Финальный (оптимальный) шаг рендерится как «Итог», а не «Шаг N».
+    assert "### Итог" in md
 
 
 def test_generate_html_detailed(sample_problem, sample_steps):

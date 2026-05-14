@@ -93,6 +93,23 @@ class Exporter:
         return "Фаза I (вспомогательная задача)" if phase == 1 else "Фаза II"
 
     @staticmethod
+    def _step_heading(step) -> str:
+        """Заголовок шага: «Шаг N» для итерации с pivot, «Итог»/«Неограниченность»/
+        «Несовместность» для терминальных шагов (без реального pivot).
+
+        Терминальные шаги в текущей реализации получают такой же номер итерации,
+        как и предыдущий pivot, поэтому отображать «Шаг N» для них вводит в
+        заблуждение.
+        """
+        if getattr(step, 'is_infeasible', False):
+            return "Итог (несовместность)"
+        if getattr(step, 'is_unbounded', False):
+            return "Итог (неограниченность)"
+        if getattr(step, 'is_optimal', False):
+            return "Итог (оптимум)"
+        return f"Шаг {step.iteration}"
+
+    @staticmethod
     def _render_step_lines(
         step: SimplexStep,
         detailed: bool,
@@ -156,6 +173,19 @@ class Exporter:
                 if x_original is not None and n_orig_vars is not None:
                     x_orig_str = Exporter.vec_to_latex(x_original[:n_orig_vars], is_column=False)
                     lines.append(f"**Исходные переменные $x^*$:** $x^* = {x_orig_str}$\n")
+
+                # Защитная сетка (баг #5): если восстановленное решение нарушает
+                # исходные ограничения — выводим предупреждение.
+                errs = getattr(step, 'validation_errors', None)
+                if errs:
+                    lines.append(
+                        "\n⚠️ **Внимание:** восстановленное решение НАРУШАЕТ "
+                        "исходные ограничения задачи. Это указывает на ошибку в солвере "
+                        "или некорректно заданную задачу:\n"
+                    )
+                    for e in errs:
+                        lines.append(f"- {e}")
+                    lines.append("")
 
                 # Раздел двойственного решения с учётом знаков (пункт №4)
                 lines.extend(Exporter._render_dual_solution(step))
@@ -264,7 +294,7 @@ class Exporter:
                 md.append(f"\n## {Exporter._phase_label(step.phase)}\n")
                 last_phase = step.phase
 
-            md.append(f"### Шаг {step.iteration}")
+            md.append(f"### {Exporter._step_heading(step)}")
             md.extend(Exporter._render_step_lines(
                 step, detailed, final_answer,
                 x_original=x_original,
@@ -319,7 +349,10 @@ class Exporter:
                 f"id='step-card-{step.iteration}'>"
             )
             html.append("<div class='flex justify-between items-center border-b pb-2 mb-4'>")
-            html.append(f"<h4 class='text-lg font-bold text-indigo-700'>Шаг {step.iteration} ({Exporter._phase_label(step.phase)})</h4>")
+            html.append(
+                f"<h4 class='text-lg font-bold text-indigo-700'>"
+                f"{Exporter._step_heading(step)} ({Exporter._phase_label(step.phase)})</h4>"
+            )
             html.append(
                 f"<label class='text-sm text-gray-500 flex items-center cursor-pointer no-print'>"
                 f"<input type='checkbox' class='mr-2 step-visibility-toggle' data-step='{step.iteration}' "

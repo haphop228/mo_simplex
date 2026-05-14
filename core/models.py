@@ -45,3 +45,6 @@ class SimplexStep:
     u_0_original: Optional[List[Fraction]] = None
     # Знаки строк после приведения b>=0 (True = строка была инвертирована)
     row_inverted: Optional[List[bool]] = None
+    # Список ошибок валидации восстановленного решения (пустой/None = ОК).
+    # Заполняется только на финальном (оптимальном) шаге фазы II.
+    validation_errors: Optional[List[str]] = None

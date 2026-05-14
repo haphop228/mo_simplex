@@ -376,6 +376,18 @@ class SimplexSolver:
             u_0_original = self._compute_u0_original(u_0)
 
             if j_0 is None:
+                # Защитная сетка: проверяем, что восстановленное решение
+                # удовлетворяет ИСХОДНЫМ ограничениям (только для финального
+                # оптимума фазы II, т.к. на фазе I задача вспомогательная).
+                validation_errors: Optional[List[str]] = None
+                if phase == 2:
+                    try:
+                        x_orig = self.recover_original_x(x_full)
+                        errs = self.validate_solution(x_orig)
+                        validation_errors = errs if errs else None
+                    except Exception as exc:  # pragma: no cover — диагностика
+                        validation_errors = [f"validate_solution исключение: {exc}"]
+
                 yield SimplexStep(
                     iteration=iteration_counter[0],
                     N=list(self.N),
@@ -396,6 +408,7 @@ class SimplexSolver:
                     var_map=list(self._var_map),
                     u_0_original=u_0_original,
                     row_inverted=list(self._row_inverted),
+                    validation_errors=validation_errors,
                 )
                 return ('optimal', B_inv)
 
@@ -433,7 +446,11 @@ class SimplexSolver:
                 if z_0[i] > 0:
                     ratio = x_B[i] / z_0[i]
                     ratios.append(ratio)
-                    if t_0 is None or ratio < t_0 or (ratio == t_0 and self.N[i] < self.N[s_0]):
+                    if (
+                        t_0 is None
+                        or ratio < t_0
+                        or (ratio == t_0 and (s_0 == -1 or self.N[i] < self.N[s_0]))
+                    ):
                         t_0 = ratio
                         s_0 = i
                 else:
@@ -486,58 +503,84 @@ class SimplexSolver:
             result.append(sign * row_sign * u)
         return result
 
-    def compute_final_answer(self, last_step) -> Fraction:
-        """Вычисляет значение исходной целевой функции f* = c^T x*.
+    def validate_solution(self, x_orig: List[Fraction]) -> List[str]:
+        """Проверяет, что восстановленный вектор ``x_orig`` удовлетворяет
+        ИСХОДНЫМ ограничениям задачи (до любых внутренних редукций).
 
-        Учитывает:
-        1. Вклад базисных переменных (через внутренние коэффициенты c).
-        2. Константный сдвиг от нижних границ (lb != 0): c_j * lb_j.
-        3. Фиксированные переменные (lb == ub): c_j * lb_j (они убраны из задачи).
-        4. Направление оптимизации (min → инвертируем знак).
+        Возвращает список человекочитаемых описаний нарушений. Пустой список —
+        решение корректно.
+
+        Проверяемые свойства:
+
+        1. ``len(x_orig) == n_orig_vars``.
+        2. Нижние границы исходной задачи: если ``lb_j is not None``, то
+           ``x_orig[j] >= lb_j``.
+        3. Верхние границы исходной задачи: если ``ub_j is not None``, то
+           ``x_orig[j] <= ub_j``.
+        4. Каждое исходное ограничение ``A_i · x_orig {signs[i]} b[i]``
+           выполняется (берутся исходные ``self.problem.A``, ``self.problem.b``,
+           ``self.problem.signs`` — до сдвигов и инверсий строк).
         """
-        # Вклад базисных переменных (внутренние коэффициенты уже учитывают сдвиги x' = x - lb)
-        c_B = [self.c[idx] for idx in last_step.N]
-        obj_val = sum(
-            (c_B[i] * last_step.x_B[i] for i in range(len(last_step.N))),
-            Fraction(0)
+        violations: List[str] = []
+        n = self.n_orig_vars
+
+        if len(x_orig) != n:
+            violations.append(
+                f"длина восстановленного вектора {len(x_orig)} != n_orig_vars {n}"
+            )
+            return violations
+
+        problem = self.problem
+        # Исходные границы (как в исходной задаче, до редукций).
+        raw_lb = problem.lower_bounds or [Fraction(0)] * n
+        raw_ub = problem.upper_bounds or [None] * n
+
+        # 1) Границы переменных.
+        for j in range(n):
+            lb = raw_lb[j]
+            ub = raw_ub[j]
+            xj = x_orig[j]
+            if lb is not None and xj < lb:
+                violations.append(
+                    f"x_{j+1} = {xj} < lower_bound {lb}"
+                )
+            if ub is not None and xj > ub:
+                violations.append(
+                    f"x_{j+1} = {xj} > upper_bound {ub}"
+                )
+
+        # 2) Исходные строки системы.
+        for i, row in enumerate(problem.A):
+            lhs = sum(
+                (row[j] * x_orig[j] for j in range(n)),
+                Fraction(0),
+            )
+            rhs = problem.b[i]
+            sign = problem.signs[i]
+            ok = (
+                (sign == '<=' and lhs <= rhs)
+                or (sign == '>=' and lhs >= rhs)
+                or (sign == '=' and lhs == rhs)
+            )
+            if not ok:
+                violations.append(
+                    f"ограничение {i+1}: LHS={lhs} {sign} {rhs} не выполнено"
+                )
+
+        return violations
+
+    def compute_final_answer(self, last_step) -> Fraction:
+        """Вычисляет значение исходной целевой функции f* = c_orig^T x_orig.
+
+        Использует восстановленные значения исходных переменных и оригинальные
+        коэффициенты ``self.problem.c`` — это устраняет необходимость учитывать
+        сдвиги, инверсии знака и направление оптимизации отдельно.
+        """
+        x_orig = self.recover_original_x(last_step.x_full)
+        return sum(
+            (self.problem.c[j] * x_orig[j] for j in range(self.n_orig_vars)),
+            Fraction(0),
         )
-
-        # Добавляем константные вклады от редукций переменных
-        # _var_map содержит записи для всех исходных переменных
-        ext_idx = 0
-        for entry in self._var_map:
-            kind = entry[0]
-            orig_j = entry[1]
-            shift = entry[2]
-
-            if kind == 'fixed':
-                # Переменная была удалена из задачи: x_j = shift (= lb = ub)
-                # Её вклад: c_j * shift (используем исходный c, до инверсии для min)
-                orig_c_j = self.problem.c[orig_j]
-                internal_c_j = orig_c_j if self.is_max else -orig_c_j
-                obj_val += internal_c_j * shift
-                # fixed не занимает столбец в расширенной задаче
-            elif kind == 'direct' and shift != Fraction(0):
-                # x_j' = x_j - shift => c_j * x_j = c_j * x_j' + c_j * shift
-                # Внутренний obj_val уже содержит c_j * x_j', добавляем c_j * shift
-                # Используем внутренний коэффициент (уже с учётом is_max)
-                if ext_idx < len(self.c):
-                    obj_val += self.c[ext_idx] * shift
-                ext_idx += 1
-            elif kind == 'neg_shift':
-                # x_j' = shift - x_j => x_j = shift - x_j'
-                # c_j * x_j = c_j * shift - c_j * x_j'
-                # Внутренний c_j уже инвертирован: self.c[ext_idx] = -orig_c_j (или +orig_c_j для min)
-                # Нужно добавить c_j * shift (исходный c_j)
-                orig_c_j = self.problem.c[orig_j] if orig_j < self.n_orig_vars else Fraction(0)
-                internal_c_j = orig_c_j if self.is_max else -orig_c_j
-                obj_val += internal_c_j * shift
-                ext_idx += 1
-            else:
-                if kind != 'fixed':
-                    ext_idx += 1
-
-        return obj_val if self.is_max else -obj_val
 
     def recover_original_x(self, x_full: List[Fraction]) -> List[Fraction]:
         """Восстанавливает значения исходных переменных из расширенного вектора x.
