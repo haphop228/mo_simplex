@@ -293,6 +293,22 @@ async function solve() {
     }
 }
 
+async function saveHtml() {
+    const detailed = document.getElementById('detailed-mode') ? document.getElementById('detailed-mode').checked : false;
+    const hiddenSteps = Array.from(document.querySelectorAll('.step-visibility-toggle:not(:checked)')).map(el => parseInt(el.dataset.step));
+
+    try {
+        const result = await pywebview.api.save_html(detailed, hiddenSteps);
+        if (result && result.error) {
+            alert("Ошибка сохранения: " + result.error);
+        } else if (result && result.success) {
+            alert("HTML сохранён. Откройте файл в браузере и нажмите Ctrl+P → «Сохранить как PDF».");
+        }
+    } catch (e) {
+        alert("Ошибка при сохранении HTML: " + e);
+    }
+}
+
 async function saveMarkdown() {
     const detailed = document.getElementById('detailed-mode') ? document.getElementById('detailed-mode').checked : false;
     const hiddenSteps = Array.from(document.querySelectorAll('.step-visibility-toggle:not(:checked)')).map(el => parseInt(el.dataset.step));
