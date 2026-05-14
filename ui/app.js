@@ -231,7 +231,7 @@ async function solve() {
             missing.push(`${label} (нечисловое значение «${raw}»)`);
             return NaN;
         }
-        return v;
+        return raw;
     };
 
     const c = Array.from(document.querySelectorAll('.obj-coeff'))
@@ -274,13 +274,14 @@ async function solve() {
             lb = null; // свободная снизу
             hasCustomBounds = true;
         } else {
-            lb = parseFloat(lbStr);
-            if (!Number.isFinite(lb)) {
+            const lbNum = parseFloat(lbStr);
+            if (!Number.isFinite(lbNum)) {
                 if (lbEl) lbEl.classList.add('input-invalid');
                 missing.push(`нижняя граница x_${j+1} («${lbStr}»)`);
                 boundsInvalid = true;
-            } else if (lb !== 0) {
-                hasCustomBounds = true;
+            } else {
+                lb = lbStr;
+                if (lbStr !== '0') hasCustomBounds = true;
             }
         }
 
@@ -289,12 +290,13 @@ async function solve() {
         if (ubStr === '' || ubStr === 'inf' || ubStr === '+inf' || ubStr === 'infinity') {
             ub = null;
         } else {
-            ub = parseFloat(ubStr);
-            if (!Number.isFinite(ub)) {
+            const ubNum = parseFloat(ubStr);
+            if (!Number.isFinite(ubNum)) {
                 if (ubEl) ubEl.classList.add('input-invalid');
                 missing.push(`верхняя граница x_${j+1} («${ubStr}»)`);
                 boundsInvalid = true;
             } else {
+                ub = ubStr;
                 hasCustomBounds = true;
             }
         }

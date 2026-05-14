@@ -16,9 +16,9 @@ class Api:
 
     def solve(self, data):
         try:
-            c = [Fraction(x).limit_denominator() for x in data['c']]
-            A = [[Fraction(x).limit_denominator() for x in row] for row in data['A']]
-            b = [Fraction(x).limit_denominator() for x in data['b']]
+            c = [Fraction(str(x)) for x in data['c']]
+            A = [[Fraction(str(x)) for x in row] for row in data['A']]
+            b = [Fraction(str(x)) for x in data['b']]
             signs = data['signs']
             is_max = data['is_max']
 
@@ -36,7 +36,7 @@ class Api:
                     return None
                 if s in ('-inf', '-infinity'):
                     return None
-                return Fraction(val).limit_denominator()
+                return Fraction(str(val))
 
             lower_bounds = None
             upper_bounds = None
