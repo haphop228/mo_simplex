@@ -11,8 +11,8 @@ class Exporter:
         if f.denominator == 1:
             return str(f.numerator)
         if f.numerator < 0:
-            return f"-\\frac{{{-f.numerator}}}{{{f.denominator}}}"
-        return f"\\frac{{{f.numerator}}}{{{f.denominator}}}"
+            return f"-\\dfrac{{{-f.numerator}}}{{{f.denominator}}}"
+        return f"\\dfrac{{{f.numerator}}}{{{f.denominator}}}"
 
     @staticmethod
     def vec_to_latex(v: List[Fraction], is_column: bool = True) -> str:

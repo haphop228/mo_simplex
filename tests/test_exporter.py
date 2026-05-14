@@ -43,9 +43,9 @@ def sample_steps():
 
 
 def test_frac_to_latex():
-    assert Exporter.frac_to_latex(Fraction(1, 4)) == "\\frac{1}{4}"
+    assert Exporter.frac_to_latex(Fraction(1, 4)) == "\\dfrac{1}{4}"
     assert Exporter.frac_to_latex(Fraction(4, 1)) == "4"
-    assert Exporter.frac_to_latex(Fraction(-3, 2)) == "-\\frac{3}{2}"
+    assert Exporter.frac_to_latex(Fraction(-3, 2)) == "-\\dfrac{3}{2}"
 
 
 def test_generate_markdown(sample_problem, sample_steps):
