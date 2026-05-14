@@ -18,6 +18,27 @@ class LinearProblem:
     lower_bounds: Optional[List[Bound]] = None
     upper_bounds: Optional[List[Bound]] = None
 
+    def __post_init__(self):
+        n = len(self.c)
+        m = len(self.A)
+        if any(len(row) != n for row in self.A):
+            raise ValueError(f"A: все строки должны иметь длину {n}")
+        if len(self.b) != m:
+            raise ValueError(f"len(b)={len(self.b)} != len(A)={m}")
+        if len(self.signs) != m:
+            raise ValueError(f"len(signs)={len(self.signs)} != len(A)={m}")
+        for s in self.signs:
+            if s not in ('<=', '>=', '='):
+                raise ValueError(f"signs: ожидается '<=', '>=' или '=', получено: {s!r}")
+        if self.lower_bounds is not None and len(self.lower_bounds) != n:
+            raise ValueError(f"len(lower_bounds)={len(self.lower_bounds)} != len(c)={n}")
+        if self.upper_bounds is not None and len(self.upper_bounds) != n:
+            raise ValueError(f"len(upper_bounds)={len(self.upper_bounds)} != len(c)={n}")
+        if self.lower_bounds is not None and self.upper_bounds is not None:
+            for j, (l, u) in enumerate(zip(self.lower_bounds, self.upper_bounds)):
+                if l is not None and u is not None and l > u:
+                    raise ValueError(f"lb[{j}]={l} > ub[{j}]={u} (несовместная граница)")
+
 @dataclass
 class SimplexStep:
     iteration: int

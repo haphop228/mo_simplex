@@ -34,23 +34,37 @@ class Exporter:
         terms = []
         for i, c in enumerate(coeffs):
             if c != 0:
-                sign = "+" if c > 0 and terms else ("" if c > 0 else "-")
-                c_abs = abs(c)
-                if c_abs == 1:
-                    coeff = ""
-                    sep = ""
+                is_first = not terms
+                # Знак: для первого положительного — пусто, для последующих положительных — '+',
+                # для отрицательных — '-' всегда.
+                if c < 0:
+                    sign = "-"
+                elif is_first:
+                    sign = ""
                 else:
-                    coeff = Exporter.frac_to_latex(c_abs)
-                    # Если коэффициент — дробь (\frac{...}{...}), добавляем тонкий пробел
-                    # чтобы числитель/знаменатель не склеивались с именем переменной
-                    sep = "\\," if coeff.startswith("\\frac") else ""
-                terms.append(f"{sign} {coeff}{sep}{var_letter}_{{{i+1}}}")
+                    sign = "+"
+                c_abs = abs(c)
+                var = f"{var_letter}_{{{i+1}}}"
+                if c_abs == 1:
+                    coeff_str = ""
+                else:
+                    coeff_str = Exporter.frac_to_latex(c_abs)
+
+                if coeff_str == "":
+                    # коэффициент ±1: знак слитно с переменной
+                    term = f"{sign}{var}"
+                elif coeff_str.startswith("\\frac"):
+                    term = f"{sign}{coeff_str}\\,{var}"
+                else:
+                    term = f"{sign}{coeff_str}{var}"
+
+                # Для не-первых слагаемых добавляем пробелы вокруг знака
+                if not is_first:
+                    term = f"{sign} {term[len(sign):]}"
+                terms.append(term)
         if not terms:
-            terms.append("0")
-        s = " ".join(terms).strip()
-        if s.startswith("+ "):
-            s = s[2:]
-        return s
+            return "0"
+        return " ".join(terms)
 
     @staticmethod
     def _format_problem_block(problem: LinearProblem) -> List[str]:
@@ -240,7 +254,7 @@ class Exporter:
         has_inversions = any(row_inv)
         u_orig = step.u_0_original
 
-        if u_orig is not None and (has_inversions or True):
+        if u_orig is not None:
             lines.append(
                 "**Двойственное решение для исходной задачи** "
                 "(с учётом инверсий строк при $b_i < 0$ и направления оптимизации):\n"

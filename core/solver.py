@@ -647,9 +647,10 @@ class SimplexSolver:
         i = 0
         while i < m:
             if self.N[i] in artificial_set and x_B[i] == 0:
+                basis_set = set(self.N)  # O(m) один раз на итерацию — избегаем O(n) поиска в списке
                 replaced = False
                 for j in range(self.n_vars):
-                    if j in artificial_set or j in self.N:
+                    if j in artificial_set or j in basis_set:
                         continue
                     A_j = [self.A[r][j] for r in range(m)]
                     z = self._mat_vec_mult(B_inv, A_j)
@@ -658,6 +659,15 @@ class SimplexSolver:
                         B_inv = self._pivot(B_inv, z, i)
                         replaced = True
                         break
+                if not replaced:
+                    import warnings
+                    warnings.warn(
+                        f"_purge_artificials_from_basis: искусственная переменная "
+                        f"x_{self.N[i]+1} (индекс {self.N[i]}) с нулевым значением "
+                        f"не выведена из базиса (вырожденный случай). "
+                        f"Она заморожена через forbidden в фазе II.",
+                        stacklevel=4,
+                    )
             i += 1
         return B_inv
 

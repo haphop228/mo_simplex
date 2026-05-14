@@ -541,3 +541,73 @@ class TestValidateSolution:
         s2 = SimplexSolver(p)
         last = list(s2.solve())[-1]
         assert last.validation_errors is None, last.validation_errors
+
+
+# ------------------------------------------------------------------ Баг #15
+class TestLinearProblemValidation:
+    """Проверка __post_init__ валидации LinearProblem (баг #15)."""
+
+    def test_mismatch_b_and_A(self):
+        """len(b) != len(A) — ValueError."""
+        with pytest.raises(ValueError, match="len\\(b\\)"):
+            LinearProblem(
+                c=[Fraction(1), Fraction(2)],
+                A=[[Fraction(1), Fraction(1)]],
+                b=[Fraction(1), Fraction(2)],
+                signs=['<='],
+            )
+
+    def test_invalid_sign(self):
+        """Неверный знак '<<' — ValueError."""
+        with pytest.raises(ValueError, match="signs"):
+            LinearProblem(
+                c=[Fraction(1), Fraction(2)],
+                A=[[Fraction(1), Fraction(1)]],
+                b=[Fraction(1)],
+                signs=['<<'],
+            )
+
+    def test_lb_greater_than_ub(self):
+        """lb[0]=5 > ub[0]=3 — ValueError."""
+        with pytest.raises(ValueError, match="lb\\[0\\]"):
+            LinearProblem(
+                c=[Fraction(1)],
+                A=[[Fraction(1)]],
+                b=[Fraction(1)],
+                signs=['<='],
+                lower_bounds=[Fraction(5)],
+                upper_bounds=[Fraction(3)],
+            )
+
+    def test_row_length_mismatch(self):
+        """Строка A[1] имеет длину != len(c) — ValueError."""
+        with pytest.raises(ValueError, match="A: все строки"):
+            LinearProblem(
+                c=[Fraction(1), Fraction(2)],
+                A=[[Fraction(1), Fraction(1)], [Fraction(1)]],
+                b=[Fraction(1), Fraction(2)],
+                signs=['<=', '<='],
+            )
+
+    def test_lower_bounds_length_mismatch(self):
+        """len(lower_bounds) != len(c) — ValueError."""
+        with pytest.raises(ValueError, match="len\\(lower_bounds\\)"):
+            LinearProblem(
+                c=[Fraction(1), Fraction(2)],
+                A=[[Fraction(1), Fraction(1)]],
+                b=[Fraction(1)],
+                signs=['<='],
+                lower_bounds=[Fraction(0)],
+            )
+
+    def test_valid_problem_passes(self):
+        """Корректная задача конструируется без ошибок."""
+        p = LinearProblem(
+            c=[Fraction(1), Fraction(2)],
+            A=[[Fraction(1), Fraction(1)]],
+            b=[Fraction(3)],
+            signs=['<='],
+            lower_bounds=[Fraction(0), Fraction(0)],
+            upper_bounds=[None, Fraction(5)],
+        )
+        assert p is not None

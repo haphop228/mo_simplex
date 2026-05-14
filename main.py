@@ -108,7 +108,6 @@ class Api:
             )
 
             # Читаем CSS для встраивания
-            import sys
             if getattr(sys, 'frozen', False):
                 basedir = sys._MEIPASS
             else:
@@ -201,7 +200,6 @@ class Api:
 if __name__ == '__main__':
     api = Api()
 
-    import sys
     if getattr(sys, 'frozen', False):
         basedir = sys._MEIPASS
     else:
