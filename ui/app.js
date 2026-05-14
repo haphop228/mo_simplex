@@ -207,7 +207,35 @@ async function solve() {
     const numConstraints = parseInt(document.getElementById('num-constraints').value) || 3;
     const canonicalMode = document.getElementById('canonical-mode').checked;
 
-    const c = Array.from(document.querySelectorAll('.obj-coeff')).map(el => parseFloat(el.value));
+    // Очищаем подсветку с прошлой попытки.
+    document.querySelectorAll('.input-invalid').forEach(el => {
+        el.classList.remove('input-invalid');
+    });
+
+    // Валидация полей: пустое или нечисловое значение — ошибка с подсветкой.
+    const missing = [];
+    const parseRequiredNumber = (el, label) => {
+        if (!el) {
+            missing.push(label);
+            return NaN;
+        }
+        const raw = (el.value || '').trim();
+        if (raw === '') {
+            el.classList.add('input-invalid');
+            missing.push(label);
+            return NaN;
+        }
+        const v = parseFloat(raw);
+        if (!Number.isFinite(v)) {
+            el.classList.add('input-invalid');
+            missing.push(`${label} (нечисловое значение «${raw}»)`);
+            return NaN;
+        }
+        return v;
+    };
+
+    const c = Array.from(document.querySelectorAll('.obj-coeff'))
+        .map((el, j) => parseRequiredNumber(el, `c_${j+1}`));
     const is_max = document.getElementById('obj-target').value === 'max';
 
     const A = [];
@@ -215,9 +243,13 @@ async function solve() {
     const signs = [];
 
     for (let i = 0; i < numConstraints; i++) {
-        const row = Array.from(document.querySelectorAll(`.constr-${i}`)).map(el => parseFloat(el.value));
+        const row = Array.from(document.querySelectorAll(`.constr-${i}`))
+            .map((el, j) => parseRequiredNumber(el, `A[${i+1}][${j+1}]`));
         A.push(row);
-        b.push(parseFloat(document.querySelector(`.constr-b-${i}`).value));
+        b.push(parseRequiredNumber(
+            document.querySelector(`.constr-b-${i}`),
+            `b_${i+1}`,
+        ));
         signs.push(document.querySelector(`.constr-sign-${i}`).value);
     }
 
@@ -225,6 +257,7 @@ async function solve() {
     const lower_bounds = [];
     const upper_bounds = [];
     let hasCustomBounds = false;
+    let boundsInvalid = false;
 
     for (let j = 0; j < numVars; j++) {
         const lbEl = document.querySelector(`.var-lb-${j}`);
@@ -242,7 +275,13 @@ async function solve() {
             hasCustomBounds = true;
         } else {
             lb = parseFloat(lbStr);
-            if (lb !== 0) hasCustomBounds = true;
+            if (!Number.isFinite(lb)) {
+                if (lbEl) lbEl.classList.add('input-invalid');
+                missing.push(`нижняя граница x_${j+1} («${lbStr}»)`);
+                boundsInvalid = true;
+            } else if (lb !== 0) {
+                hasCustomBounds = true;
+            }
         }
 
         // Верхняя граница
@@ -251,11 +290,24 @@ async function solve() {
             ub = null;
         } else {
             ub = parseFloat(ubStr);
-            hasCustomBounds = true;
+            if (!Number.isFinite(ub)) {
+                if (ubEl) ubEl.classList.add('input-invalid');
+                missing.push(`верхняя граница x_${j+1} («${ubStr}»)`);
+                boundsInvalid = true;
+            } else {
+                hasCustomBounds = true;
+            }
         }
 
         lower_bounds.push(lb);
         upper_bounds.push(ub);
+    }
+
+    if (missing.length > 0 || boundsInvalid) {
+        errDiv.innerText = "Заполните все поля корректными числами. "
+            + "Проблемные поля выделены красным: " + missing.join(", ") + ".";
+        errDiv.classList.remove('hidden');
+        return;
     }
 
     const problemData = {

@@ -48,3 +48,10 @@ input[type=number] {
         border-bottom: 1px solid #eee;
     }
 }
+
+/* Подсветка некорректных полей ввода (баг #8: валидация перед отправкой). */
+.input-invalid {
+    border-color: #dc2626 !important;
+    background-color: #fef2f2 !important;
+    outline: 1px solid #dc2626;
+}
