@@ -93,114 +93,121 @@ class SimplexSolver:
             self._build_artificial_basis()
 
     def _apply_variable_reductions(self) -> None:
-        """Применяет редукции переменных согласно таблице 1.2 algorith.md."""
-        n = self.n_orig_vars
-        # Инициализируем карту: изначально все переменные — прямые с нулевым сдвигом
-        self._var_map = [('direct', j, Fraction(0)) for j in range(n)]
+        """Применяет редукции переменных согласно таблице 1.2 algorith.md.
 
-        j = 0
-        while j < n:
-            lb = self.lower_bounds[j]
-            ub = self.upper_bounds[j]
+        Инвариант ``_var_map`` после выполнения:
+        - Все записи перечислены в порядке возрастания исходного индекса ``orig_j``.
+        - Запись с типом ``'fixed'`` НЕ занимает столбца в ``A``/``c``.
+        - Любая другая запись (``'direct'``, ``'neg_shift'``, ``'split+'``,
+          ``'split-'``) занимает РОВНО ОДИН столбец в ``A``/``c``.
+        - Порядок незафиксированных записей в ``_var_map`` строго соответствует
+          порядку соответствующих столбцов в ``A``/``c``.
 
-            # Определяем тип переменной
+        Это позволяет ``recover_original_x``/``compute_final_answer`` корректно
+        проходить по ``_var_map`` и x_full одновременно, используя один и тот же
+        счётчик внешних индексов.
+        """
+        # Сначала строим карту по исходным переменным, не модифицируя A.
+        # ext_j отслеживает текущую позицию столбца в (потенциально) изменяемой A.
+        self._var_map = []
+        ext_j = 0
+        for orig_j in range(self.n_orig_vars):
+            lb = self.lower_bounds[ext_j] if ext_j < len(self.lower_bounds) else None
+            ub = self.upper_bounds[ext_j] if ext_j < len(self.upper_bounds) else None
+
             lb_is_none = (lb is None)
             ub_is_none = (ub is None)
 
+            # 1) Фиксированная переменная: x_j = lb = ub. Подставляем константу и удаляем столбец.
             if not lb_is_none and not ub_is_none and lb == ub:
-                # Фиксированная переменная: x_j = lb. Подставляем и убираем.
-                # Вычитаем A_j * lb из b, убираем столбец.
                 shift = lb
+                # Подставляем и удаляем столбец из A, c, lower/upper_bounds.
                 for i in range(self.n_constraints):
-                    self.b[i] -= self.A[i][j] * shift
-                # Убираем столбец j из A и c
-                for i in range(self.n_constraints):
-                    self.A[i].pop(j)
-                self.c.pop(j)
-                self.lower_bounds.pop(j)
-                self.upper_bounds.pop(j)
-                self._var_map[j] = ('fixed', j, shift)
-                # Сдвигаем карту для последующих переменных
-                n -= 1
-                self.n_vars -= 1
-                # j не увеличиваем — следующая переменная теперь на том же индексе
+                    self.b[i] -= self.A[i][ext_j] * shift
+                self._remove_column(ext_j)
+                self._var_map.append(('fixed', orig_j, shift))
+                # ext_j не двигаем — следующая переменная теперь на этой позиции.
                 continue
 
+            # 2) Свободная переменная: x_j = x_j^+ - x_j^-.
             if lb_is_none and ub_is_none:
-                # Свободная переменная: x_j = x_j^+ - x_j^-
-                self._split_free_variable(j)
-                self._var_map[j] = ('split+', j, Fraction(0))
-                self._var_map.insert(j + 1, ('split-', j, Fraction(0)))
-                n += 1
-                j += 2  # пропускаем обе части
+                self._split_free_variable(ext_j)
+                self._var_map.append(('split+', orig_j, Fraction(0)))
+                self._var_map.append(('split-', orig_j, Fraction(0)))
+                ext_j += 2
                 continue
 
-            if not lb_is_none and lb < 0 and ub_is_none:
-                # x_j >= lb < 0: сдвиг x_j' = x_j - lb, x_j' >= 0
-                shift = lb
-                self._shift_variable(j, shift)
-                self._var_map[j] = ('direct', j, shift)
-                self.lower_bounds[j] = Fraction(0)
-                j += 1
-                continue
-
+            # 3) x_j <= ub (без нижней границы): замена x_j' = ub - x_j >= 0.
             if lb_is_none and not ub_is_none:
-                # x_j <= ub (без нижней границы) — свободная сверху.
-                # Заменяем x_j' = ub - x_j >= 0 (инвертируем столбец, сдвигаем b).
                 shift = ub
                 for i in range(self.n_constraints):
-                    self.b[i] -= self.A[i][j] * shift
-                    self.A[i][j] = -self.A[i][j]
-                self.c[j] = -self.c[j]
-                self._var_map[j] = ('neg_shift', j, shift)
-                self.lower_bounds[j] = Fraction(0)
-                self.upper_bounds[j] = None
-                j += 1
+                    self.b[i] -= self.A[i][ext_j] * shift
+                    self.A[i][ext_j] = -self.A[i][ext_j]
+                self.c[ext_j] = -self.c[ext_j]
+                self._var_map.append(('neg_shift', orig_j, shift))
+                self.lower_bounds[ext_j] = Fraction(0)
+                self.upper_bounds[ext_j] = None
+                ext_j += 1
                 continue
 
+            # 4) x_j >= lb (lb != 0), с возможной верхней границей.
             if not lb_is_none and lb != 0:
-                # x_j >= lb != 0: сдвиг x_j' = x_j - lb
                 shift = lb
-                self._shift_variable(j, shift)
-                self._var_map[j] = ('direct', j, shift)
-                self.lower_bounds[j] = Fraction(0)
-                # Если есть верхняя граница — пересчитываем
+                self._shift_variable(ext_j, shift)
+                self._var_map.append(('direct', orig_j, shift))
+                self.lower_bounds[ext_j] = Fraction(0)
                 if not ub_is_none:
-                    self.upper_bounds[j] = ub - shift
-                j += 1
+                    # Добавляем ограничение x_j' <= ub - shift как новую строку.
+                    self._add_upper_bound_constraint(ext_j, ub - shift)
+                    self.upper_bounds[ext_j] = None
+                ext_j += 1
                 continue
 
+            # 5) x_j >= 0 с верхней границей.
             if not ub_is_none and lb == Fraction(0):
-                # x_j <= ub при x_j >= 0: добавляем ограничение x_j + s = ub
-                # Это делается через дополнительную строку <=
-                self._add_upper_bound_constraint(j, ub)
-                self.upper_bounds[j] = None
-                j += 1
+                self._add_upper_bound_constraint(ext_j, ub)
+                self._var_map.append(('direct', orig_j, Fraction(0)))
+                self.upper_bounds[ext_j] = None
+                ext_j += 1
                 continue
 
-            # Стандартный случай: x_j >= 0, без верхней границы
-            j += 1
+            # 6) Стандартный случай: x_j >= 0, без верхней границы.
+            self._var_map.append(('direct', orig_j, Fraction(0)))
+            ext_j += 1
 
-    def _shift_variable(self, j: int, shift: Fraction) -> None:
-        """Сдвигает переменную j: x_j' = x_j - shift. Обновляет b."""
-        for i in range(self.n_constraints):
-            self.b[i] -= self.A[i][j] * shift
+    def _remove_column(self, ext_j: int) -> None:
+        """Удаляет столбец ext_j из ``A``, а также соответствующие записи в
+        ``c``, ``lower_bounds`` и ``upper_bounds``. Уменьшает ``n_vars``.
 
-    def _split_free_variable(self, j: int) -> None:
-        """Расщепляет свободную переменную j: x_j = x_j^+ - x_j^-.
-        Вставляет новый столбец -A_j после столбца j."""
+        Запись в ``_var_map`` нужно добавлять/удалять отдельно — см. инвариант
+        в ``_apply_variable_reductions``.
+        """
         for i in range(self.n_constraints):
-            self.A[i].insert(j + 1, -self.A[i][j])
-        self.c.insert(j + 1, -self.c[j])
-        self.lower_bounds.insert(j + 1, Fraction(0))
-        self.upper_bounds.insert(j + 1, None)
+            self.A[i].pop(ext_j)
+        self.c.pop(ext_j)
+        self.lower_bounds.pop(ext_j)
+        self.upper_bounds.pop(ext_j)
+        self.n_vars -= 1
+
+    def _shift_variable(self, ext_j: int, shift: Fraction) -> None:
+        """Сдвигает переменную ext_j: x_j' = x_j - shift. Обновляет b."""
+        for i in range(self.n_constraints):
+            self.b[i] -= self.A[i][ext_j] * shift
+
+    def _split_free_variable(self, ext_j: int) -> None:
+        """Расщепляет свободную переменную ext_j: x_j = x_j^+ - x_j^-.
+        Вставляет новый столбец -A_j после столбца ext_j."""
+        for i in range(self.n_constraints):
+            self.A[i].insert(ext_j + 1, -self.A[i][ext_j])
+        self.c.insert(ext_j + 1, -self.c[ext_j])
+        self.lower_bounds.insert(ext_j + 1, Fraction(0))
+        self.upper_bounds.insert(ext_j + 1, None)
         self.n_vars += 1
 
-    def _add_upper_bound_constraint(self, j: int, ub: Fraction) -> None:
-        """Добавляет ограничение x_j <= ub как новую строку системы."""
-        m = self.n_constraints
+    def _add_upper_bound_constraint(self, ext_j: int, ub: Fraction) -> None:
+        """Добавляет ограничение x_{ext_j} <= ub как новую строку системы."""
         new_row = [Fraction(0)] * self.n_vars
-        new_row[j] = Fraction(1)
+        new_row[ext_j] = Fraction(1)
         self.A.append(new_row)
         self.b.append(ub)
         self.signs.append('<=')

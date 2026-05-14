@@ -281,3 +281,90 @@ class TestDualSignCorrection:
         for i, (u, u_orig) in enumerate(zip(last.u_0, last.u_0_original)):
             if not (last.row_inverted or [])[i] if last.row_inverted else True:
                 assert u_orig == -u
+
+
+# ============================================================ regressions: lb + ub, var_map sync
+class TestLowerAndUpperBoundCombined:
+    """Регрессионные тесты для багов #1 (игнорируемая верхняя граница при lb != 0)
+    и #2 (рассинхронизация _var_map с матрицей A)."""
+
+    def test_lb_positive_and_upper_bound(self):
+        """Bug #1: max x1, x1+x2<=100, x1 ∈ [3, 10] → f*=10."""
+        p = LinearProblem(
+            c=[Fraction(1), Fraction(0)],
+            A=[[Fraction(1), Fraction(1)]],
+            b=[Fraction(100)],
+            signs=['<='],
+            is_max=True,
+            lower_bounds=[Fraction(3), Fraction(0)],
+            upper_bounds=[Fraction(10), None],
+        )
+        s = SimplexSolver(p)
+        last = list(s.solve())[-1]
+        assert last.is_optimal
+        x = s.recover_original_x(last.x_full)
+        assert x[0] == Fraction(10)
+        assert s.compute_final_answer(last) == Fraction(10)
+
+    def test_lb_negative_and_upper_bound(self):
+        """Bug #1: max x1, x1+x2<=100, x1 ∈ [-5, 7] → f*=7."""
+        p = LinearProblem(
+            c=[Fraction(1), Fraction(0)],
+            A=[[Fraction(1), Fraction(1)]],
+            b=[Fraction(100)],
+            signs=['<='],
+            is_max=True,
+            lower_bounds=[Fraction(-5), Fraction(0)],
+            upper_bounds=[Fraction(7), None],
+        )
+        s = SimplexSolver(p)
+        last = list(s.solve())[-1]
+        assert last.is_optimal
+        x = s.recover_original_x(last.x_full)
+        assert x[0] == Fraction(7)
+        assert s.compute_final_answer(last) == Fraction(7)
+
+    def test_fixed_var_in_middle(self):
+        """Bug #2: fixed-переменная в середине + сдвинутая после неё.
+        max x1+x2+x3, x1+x2+x3<=10, lb=[0,2,-3], ub=[None,2,None].
+        x2 фиксирована (lb=ub=2) → x2 ОБЯЗАТЕЛЬНО = 2, f*=10."""
+        p = LinearProblem(
+            c=[Fraction(1)] * 3,
+            A=[[Fraction(1)] * 3],
+            b=[Fraction(10)],
+            signs=['<='],
+            is_max=True,
+            lower_bounds=[Fraction(0), Fraction(2), Fraction(-3)],
+            upper_bounds=[None, Fraction(2), None],
+        )
+        s = SimplexSolver(p)
+        last = list(s.solve())[-1]
+        assert last.is_optimal
+        x = s.recover_original_x(last.x_full)
+        assert x[1] == Fraction(2), f"x2 должно быть строго 2, но получено {x[1]}"
+        # Проверка ограничения
+        assert x[0] + x[1] + x[2] <= Fraction(10)
+        assert x[0] >= Fraction(0)
+        assert x[2] >= Fraction(-3)
+        assert s.compute_final_answer(last) == Fraction(10)
+
+    def test_free_then_shifted(self):
+        """Bug #2: свободная x1 + сдвинутая x2.
+        max x1+x2, x1+x2<=10, x1 свободная, x2>=2.
+        recover_original_x не должен падать с IndexError."""
+        p = LinearProblem(
+            c=[Fraction(1), Fraction(1)],
+            A=[[Fraction(1), Fraction(1)]],
+            b=[Fraction(10)],
+            signs=['<='],
+            is_max=True,
+            lower_bounds=[None, Fraction(2)],
+            upper_bounds=[None, None],
+        )
+        s = SimplexSolver(p)
+        last = list(s.solve())[-1]
+        assert last.is_optimal
+        x = s.recover_original_x(last.x_full)  # не должно падать
+        assert x[1] >= Fraction(2)
+        assert x[0] + x[1] == Fraction(10)
+        assert s.compute_final_answer(last) == Fraction(10)
