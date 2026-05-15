@@ -10,22 +10,36 @@ class Exporter:
     def frac_to_latex(f: Fraction) -> str:
         if f.denominator == 1:
             return str(f.numerator)
+        # \dfrac (display-style) занимает больше вертикального пространства,
+        # что предотвращает визуальное наложение знаменателя на следующую строку
+        # в матрицах bmatrix при использовании KaTeX.
         if f.numerator < 0:
             return f"-\\dfrac{{{-f.numerator}}}{{{f.denominator}}}"
         return f"\\dfrac{{{f.numerator}}}{{{f.denominator}}}"
 
     @staticmethod
+    def _has_frac(items: List[Fraction]) -> bool:
+        """Проверяет, есть ли в списке хотя бы одна нецелая дробь."""
+        return any(x.denominator != 1 for x in items)
+
+    @staticmethod
     def vec_to_latex(v: List[Fraction], is_column: bool = True) -> str:
         if is_column:
-            lines = " \\\\ ".join(Exporter.frac_to_latex(x) for x in v)
+            # Если есть дроби — добавляем [2ex] после \\ для увеличения межстрочного интервала,
+            # чтобы знаменатель \dfrac не накладывался на следующую строку в KaTeX.
+            sep = " \\\\[2ex] " if Exporter._has_frac(v) else " \\\\ "
+            lines = sep.join(Exporter.frac_to_latex(x) for x in v)
         else:
             lines = " & ".join(Exporter.frac_to_latex(x) for x in v)
         return f"\\begin{{bmatrix}} {lines} \\end{{bmatrix}}"
 
     @staticmethod
     def mat_to_latex(M: List[List[Fraction]]) -> str:
+        # Если в матрице есть дроби — добавляем [2ex] после \\ для увеличения межстрочного интервала.
+        all_flat = [x for row in M for x in row]
+        sep = " \\\\[2ex]\n" if Exporter._has_frac(all_flat) else " \\\\ \n"
         rows = [" & ".join(Exporter.frac_to_latex(x) for x in row) for row in M]
-        body = " \\\\ \n".join(rows)
+        body = sep.join(rows)
         return f"\\begin{{bmatrix}}\n{body}\n\\end{{bmatrix}}"
 
     # ---------------------------------------------------------------- problem statements
@@ -35,8 +49,6 @@ class Exporter:
         for i, c in enumerate(coeffs):
             if c != 0:
                 is_first = not terms
-                # Знак: для первого положительного — пусто, для последующих положительных — '+',
-                # для отрицательных — '-' всегда.
                 if c < 0:
                     sign = "-"
                 elif is_first:
@@ -47,24 +59,19 @@ class Exporter:
                 var = f"{var_letter}_{{{i+1}}}"
                 if c_abs == 1:
                     coeff_str = ""
+                    sep = ""
                 else:
                     coeff_str = Exporter.frac_to_latex(c_abs)
-
-                if coeff_str == "":
-                    # коэффициент ±1: знак слитно с переменной
-                    term = f"{sign}{var}"
-                elif coeff_str.startswith("\\frac"):
-                    term = f"{sign}{coeff_str}\\,{var}"
-                else:
-                    term = f"{sign}{coeff_str}{var}"
-
-                # Для не-первых слагаемых добавляем пробелы вокруг знака
-                if not is_first:
-                    term = f"{sign} {term[len(sign):]}"
-                terms.append(term)
+                    # Если коэффициент — дробь (\dfrac{...}{...}), добавляем тонкий пробел
+                    # чтобы знаменатель не склеивался с именем переменной
+                    sep = "\\," if coeff_str.startswith("\\dfrac") else ""
+                terms.append(f"{sign} {coeff_str}{sep}{var}")
         if not terms:
-            return "0"
-        return " ".join(terms)
+            terms.append("0")
+        s = " ".join(terms).strip()
+        if s.startswith("+ "):
+            s = s[2:]
+        return s
 
     @staticmethod
     def _format_problem_block(problem: LinearProblem) -> List[str]:
@@ -84,21 +91,6 @@ class Exporter:
         return lines
 
     @staticmethod
-    def _dual_var_sign(primal_sign: str, is_max: bool) -> str:
-        """Возвращает LaTeX-строку ограничения знака двойственной переменной.
-
-        Правило двойственности:
-        - Если прямая — max:  '<=' → u_i >= 0,  '>=' → u_i <= 0,  '=' → u_i ∈ ℝ
-        - Если прямая — min:  '>=' → u_i >= 0,  '<=' → u_i <= 0,  '=' → u_i ∈ ℝ
-        """
-        if primal_sign == '=':
-            return "\\in \\mathbb{R}"
-        natural_sign = '<=' if is_max else '>='
-        if primal_sign == natural_sign:
-            return "\\geq 0"
-        return "\\leq 0"
-
-    @staticmethod
     def _format_dual_block(problem: LinearProblem) -> List[str]:
         lines: List[str] = []
         lines.append("$$")
@@ -111,20 +103,7 @@ class Exporter:
             row_str = Exporter._format_objective_terms(col, "u")
             sign_str = "\\geq" if problem.is_max else "\\leq"
             lines.append(f"{row_str} &{sign_str} {Exporter.frac_to_latex(problem.c[j])} \\\\")
-        # Знаки двойственных переменных — определяются типом каждого ограничения прямой задачи
-        m = len(problem.signs)
-        sign_groups: dict = {}  # sign_latex -> list of 1-based indices
-        for i, s in enumerate(problem.signs):
-            sg = Exporter._dual_var_sign(s, problem.is_max)
-            sign_groups.setdefault(sg, []).append(i + 1)
-        # Если все переменные имеют одинаковый знак — одна строка, иначе — поштучно
-        if len(sign_groups) == 1:
-            sg = next(iter(sign_groups))
-            lines.append(f"u &{sg}")
-        else:
-            for i, s in enumerate(problem.signs):
-                sg = Exporter._dual_var_sign(s, problem.is_max)
-                lines.append(f"u_{{{i+1}}} &{sg} \\\\")
+        lines.append("u &\\geq 0")
         lines.append("\\end{align*}")
         lines.append("$$\n")
         return lines
@@ -133,23 +112,6 @@ class Exporter:
     @staticmethod
     def _phase_label(phase: int) -> str:
         return "Фаза I (вспомогательная задача)" if phase == 1 else "Фаза II"
-
-    @staticmethod
-    def _step_heading(step) -> str:
-        """Заголовок шага: «Шаг N» для итерации с pivot, «Итог»/«Неограниченность»/
-        «Несовместность» для терминальных шагов (без реального pivot).
-
-        Терминальные шаги в текущей реализации получают такой же номер итерации,
-        как и предыдущий pivot, поэтому отображать «Шаг N» для них вводит в
-        заблуждение.
-        """
-        if getattr(step, 'is_infeasible', False):
-            return "Итог (несовместность)"
-        if getattr(step, 'is_unbounded', False):
-            return "Итог (неограниченность)"
-        if getattr(step, 'is_optimal', False):
-            return "Итог (оптимум)"
-        return f"Шаг {step.iteration}"
 
     @staticmethod
     def _render_step_lines(
@@ -216,20 +178,7 @@ class Exporter:
                     x_orig_str = Exporter.vec_to_latex(x_original[:n_orig_vars], is_column=False)
                     lines.append(f"**Исходные переменные $x^*$:** $x^* = {x_orig_str}$\n")
 
-                # Защитная сетка (баг #5): если восстановленное решение нарушает
-                # исходные ограничения — выводим предупреждение.
-                errs = getattr(step, 'validation_errors', None)
-                if errs:
-                    lines.append(
-                        "\n⚠️ **Внимание:** восстановленное решение НАРУШАЕТ "
-                        "исходные ограничения задачи. Это указывает на ошибку в солвере "
-                        "или некорректно заданную задачу:\n"
-                    )
-                    for e in errs:
-                        lines.append(f"- {e}")
-                    lines.append("")
-
-                # Раздел двойственного решения с учётом знаков (пункт №4)
+                # Раздел двойственного решения с учётом знаков
                 lines.extend(Exporter._render_dual_solution(step))
 
             return lines
@@ -253,10 +202,10 @@ class Exporter:
         if step.ratios is not None and step.t_0 is not None and step.z_0 is not None:
             if detailed:
                 ratios_str = ", ".join(
-                    f"\\frac{{{Exporter.frac_to_latex(step.x_B[i])}}}{{{Exporter.frac_to_latex(step.z_0[i])}}}"
+                    f"\\dfrac{{{Exporter.frac_to_latex(step.x_B[i])}}}{{{Exporter.frac_to_latex(step.z_0[i])}}}"
                     for i, r in enumerate(step.ratios) if r is not None
                 )
-                lines.append(f"**Шаг $t_0$:** $t_0 = \\min({ratios_str}) = {Exporter.frac_to_latex(step.t_0)}$  ")
+                lines.append(f"**Шаг $t_0$:** $t_0 = \\min\\left\\{{{ratios_str}\\right\\}} = {Exporter.frac_to_latex(step.t_0)}$  ")
             else:
                 lines.append(f"**Шаг $t_0$:** $t_0 = {Exporter.frac_to_latex(step.t_0)}$  ")
         if step.s_0 is not None:
@@ -265,11 +214,7 @@ class Exporter:
 
     @staticmethod
     def _render_dual_solution(step: SimplexStep) -> List[str]:
-        """Раздел двойственного решения с пояснением знаков (пункт №4 STATUS.md).
-
-        Выводит u_0 (внутренний, для приведённой задачи) и u_0_original
-        (для исходной задачи, с учётом инверсий строк и направления оптимизации).
-        """
+        """Раздел двойственного решения с пояснением знаков."""
         lines: List[str] = []
         lines.append("---\n")
         lines.append("**Двойственное решение $u^*$:**\n")
@@ -277,12 +222,11 @@ class Exporter:
             f"$$ u^* = u_0 = {Exporter.vec_to_latex(step.u_0, is_column=False)} $$\n"
         )
 
-        # Если есть инвертированные строки или задача на min — показываем пояснение
         row_inv = step.row_inverted or []
         has_inversions = any(row_inv)
         u_orig = step.u_0_original
 
-        if u_orig is not None:
+        if u_orig is not None and (has_inversions or True):
             lines.append(
                 "**Двойственное решение для исходной задачи** "
                 "(с учётом инверсий строк при $b_i < 0$ и направления оптимизации):\n"
@@ -336,7 +280,9 @@ class Exporter:
                 md.append(f"\n## {Exporter._phase_label(step.phase)}\n")
                 last_phase = step.phase
 
-            md.append(f"### {Exporter._step_heading(step)}")
+            is_final = step.is_optimal and step.phase == 2
+            step_title = "### Итог" if is_final else f"### Шаг {step.iteration}"
+            md.append(step_title)
             md.extend(Exporter._render_step_lines(
                 step, detailed, final_answer,
                 x_original=x_original,
@@ -391,10 +337,7 @@ class Exporter:
                 f"id='step-card-{step.iteration}'>"
             )
             html.append("<div class='flex justify-between items-center border-b pb-2 mb-4'>")
-            html.append(
-                f"<h4 class='text-lg font-bold text-indigo-700'>"
-                f"{Exporter._step_heading(step)} ({Exporter._phase_label(step.phase)})</h4>"
-            )
+            html.append(f"<h4 class='text-lg font-bold text-indigo-700'>Шаг {step.iteration} ({Exporter._phase_label(step.phase)})</h4>")
             html.append(
                 f"<label class='text-sm text-gray-500 flex items-center cursor-pointer no-print'>"
                 f"<input type='checkbox' class='mr-2 step-visibility-toggle' data-step='{step.iteration}' "
@@ -422,17 +365,15 @@ class Exporter:
 
         Минимальный markdown-парсинг:
         * `**bold**` → `<strong>bold</strong>`
-        * `*italic*` → `<em>italic</em>` (только если не часть `**`)
         * trailing `  ` перед \n → `<br>`
         * `---` на отдельной строке → `<hr>`
-        * пустая строка → `<br>` (визуальный отступ)
         """
         text = "\n".join(md_lines)
 
-        # Жирный (greedy не годится — используем .+?)
+        # Жирный
         text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text, flags=re.DOTALL)
 
-        # Горизонтальная линия (отдельная строка из --- )
+        # Горизонтальная линия
         text = re.sub(r"(?m)^---\s*$", "<hr class='my-3 border-gray-200'>", text)
 
         # Markdown two-space line break: "  \n" → "<br>\n"
